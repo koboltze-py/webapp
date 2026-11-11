@@ -1,0 +1,3 @@
+# Platzhalter, damit der Ordner (SQLite-Datenbank) in OneDrive existiert
+# und nicht leer gelöscht wird. Die eigentliche Datenbankdatei
+# (krankmeldungen.db) wird beim ersten Start automatisch angelegt.

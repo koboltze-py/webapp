@@ -1,0 +1,21 @@
+# Secrets (automatisch erzeugt, siehe backend/app/config.py)
+backend/.env
+
+# Gesundheitsdaten / lokale Datenbank
+backend/data/*.db
+backend/data/*.sqlite
+backend/data/*.sqlite3
+
+# Sicherungen (enthalten Gesundheitsdaten, siehe Backups/Supabase/LIESMICH.txt)
+Backups/Supabase/*/
+!Backups/Supabase/LIESMICH.txt
+
+# Supabase-Konfiguration (enthält private E-Mail-Adressen) - siehe config.example.json
+Supabase-Sicherung/config.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/

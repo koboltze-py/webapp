@@ -1,0 +1,176 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#b71c1c"><title>DRK FKB | Krankmeldungen</title><style>
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#202731;background:#f4f6f9}*{box-sizing:border-box}body{margin:0}header{background:#b71c1c;color:white;padding:17px max(18px,calc((100vw - 1220px)/2));display:flex;justify-content:space-between;align-items:center;gap:12px}header h1{font-size:20px;margin:0}header small{opacity:.85}main{max-width:1220px;margin:24px auto;padding:0 16px}.card{background:#fff;border:1px solid #e2e5ea;border-radius:13px;padding:20px;margin-bottom:18px;box-shadow:0 2px 10px #1c243009}h2{margin:0 0 14px;font-size:19px}label{font-weight:600;font-size:13px;display:block;margin-bottom:5px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.grid .wide{grid-column:span 2}input,textarea,select{font:inherit;padding:10px 11px;border:1px solid #cbd2db;border-radius:8px;width:100%;background:#fff}textarea{resize:vertical}button{cursor:pointer;background:#b71c1c;color:#fff;border:0;border-radius:8px;padding:10px 14px;font-weight:650}button.secondary{background:#e8ecf1;color:#202731}button.outline{background:white;border:1px solid #cbd2db;color:#303946}button:disabled{opacity:.5;cursor:not-allowed}button.danger{background:#fff2f2;color:#9b1c1c;border:1px solid #efb4b4}button.danger:hover{background:#ffe4e4}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}.metric{background:white;border:1px solid #e2e5ea;border-radius:12px;padding:16px}.metric strong{display:block;font-size:28px;color:#a61d24}.metric span{font-size:12px;color:#626d79}.toolbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px;margin-bottom:14px;align-items:end}.filter-dates{display:contents}.filter-dates.hidden{display:none!important}.tablewrap{overflow:auto}.tabnav{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap}.tabnav button.active{background:#b71c1c;color:white}.tabnav button{background:#e8ecf1;color:#202731}.audit-change{margin:5px 0}.audit-change b{font-weight:600}.audit-item{white-space:normal;min-width:260px}table{border-collapse:collapse;width:100%;font-size:13px;min-width:1000px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e6e9ed;vertical-align:top}th{background:#f3f5f7;white-space:nowrap}td:last-child{white-space:nowrap}.pill{display:inline-block;background:#fce7e8;color:#95262f;padding:4px 8px;border-radius:99px;font-size:12px}.pill.done{background:#e3f3e9;color:#167346}.muted{color:#6b7280}.small{font-size:12px}.error{color:#a21c24}.notice{padding:12px;border-radius:8px;background:#fff4dc;margin:12px 0}.hidden{display:none!important}#login{max-width:440px;margin:10vh auto}.field{margin-bottom:13px}@media(max-width:850px){.grid{grid-template-columns:repeat(2,1fr)}.toolbar{grid-template-columns:1fr 1fr}.summary{grid-template-columns:repeat(3,1fr)}}@media(max-width:480px){.grid,.toolbar{grid-template-columns:1fr}.grid .wide{grid-column:auto}.summary{gap:6px}.metric{padding:10px}.metric strong{font-size:22px}header h1{font-size:16px}}
+</style></head><body><header><div><h1>DRK FKB · Krankmeldungen</h1><small>Eigenständige Meldungsverwaltung (Python/FastAPI) · <span id="currentRole">Nicht angemeldet</span></small></div><button id="logout" class="outline hidden">Abmelden</button></header><main>
+<section id="login" class="card"><h2>Anmeldung</h2><form id="loginForm"><div class="field"><label for="username">Benutzername</label><input id="username" value="DRKFKB" required autocomplete="username"></div><div class="field"><label for="password">Passwort</label><input id="password" type="password" required autocomplete="current-password"></div><button type="submit">Anmelden</button><p id="loginMessage" class="error" role="alert"></p></form></section>
+<div id="app" class="hidden"><nav class="tabnav admin-only hidden" aria-label="Admin-Bereiche"><button type="button" id="tabReports" class="active" aria-selected="true">Krankmeldungen</button><button type="button" id="tabAudit" aria-selected="false">Änderungsprotokoll</button></nav><div id="reportsView"><section class="summary"><div class="metric"><strong id="kpiToday">–</strong><span>Heute krank</span></div><div class="metric"><strong id="kpiOpen">–</strong><span>Offene Meldungen</span></div><div class="metric admin-only"><strong id="kpiCareman">–</strong><span>Careman ausstehend</span></div></section>
+<section class="card"><h2 id="formTitle">Krankmeldung erfassen</h2><form id="entryForm"><div class="grid"><div><label for="reportedAt">Meldedatum</label><input id="reportedAt" type="date" required></div><div><label for="employee">Meldender (Mitarbeiter)</label><input id="employee" required maxlength="150" placeholder="Nachname, Vorname"></div><div><label for="sickFrom">Krank von</label><input id="sickFrom" type="date" required></div><div><label for="sickTo">Krank bis</label><input id="sickTo" type="date" required></div><div><label for="callAt">Anruf um</label><input id="callAt" type="time"></div><div><label for="acceptedBy">Angenommen von</label><input id="acceptedBy" maxlength="150" placeholder="Disponent"></div><div class="admin-only"><label for="careman">In Careman eingetragen</label><select id="careman"><option value="false">Nein / offen</option><option value="true">Ja / erledigt</option></select></div><div class="wide"><label for="notes">Bemerkungen (keine Diagnosen)</label><textarea id="notes" rows="2" maxlength="1000" placeholder="Nur organisatorisch notwendige Hinweise"></textarea></div></div><div class="actions"><button id="saveBtn" type="submit">Meldung speichern</button><button id="resetBtn" type="button" class="secondary">Eingabe zurücksetzen</button></div><p id="formMessage" role="status" class="small"></p></form></section>
+<section class="card"><h2>Übersicht Krankmeldungen</h2><p class="small muted">Standard: Heute. Wähle Gestern, aktueller Monat oder einen beliebigen Zeitraum. Die Mitarbeitersuche kann mit jedem Zeitraum kombiniert werden. Es zählt der Krankheitszeitraum (Krank von / bis).</p><div class="toolbar"><div><label for="search">Mitarbeiter suchen</label><input id="search" placeholder="Name eingeben" autocomplete="off"></div><div><label for="filterPeriod">Zeitraum</label><select id="filterPeriod"><option value="today" selected>Heute</option><option value="yesterday">Gestern</option><option value="month">Aktueller Monat</option><option value="custom">Eigener Zeitraum</option><option value="all">Alle Zeiträume</option></select></div><div class="filter-dates hidden" id="customDates"><div><label for="filterFrom">Von</label><input id="filterFrom" type="date"></div><div><label for="filterTo">Bis</label><input id="filterTo" type="date"></div></div><div class="admin-only"><label for="filterCareman">Careman</label><select id="filterCareman"><option value="all">Alle Status</option><option value="open">Offen</option><option value="done">Eingetragen</option></select></div><button id="resetFilters" class="secondary" type="button">Filter zurücksetzen</button><button id="exportBtn" class="secondary" type="button">CSV-Export</button></div><div class="tablewrap"><table><thead><tr><th>Datum</th><th>Meldender</th><th>Krank von</th><th>Krank bis</th><th>Anruf um</th><th>Angenommen von</th><th>Bemerkungen</th><th class="admin-only">Careman</th><th>Aktion</th></tr></thead><tbody id="entries"></tbody></table></div><p id="tableMessage" class="small muted" role="status"></p></section>
+</div><section id="auditView" class="card hidden admin-only">
+<h2>Änderungsprotokoll</h2>
+<p class="small muted">Alle Änderungen seit Inbetriebnahme dieser Anwendung. Nach einer Löschung bleibt der Protokolleintrag erhalten. Zeiten werden lokal angezeigt.</p>
+<div class="toolbar">
+<div><label for="auditSearch">Mitarbeiter suchen</label><input id="auditSearch" placeholder="Mitarbeitername" autocomplete="off"></div>
+<div><label for="auditAction">Aktion</label><select id="auditAction"><option value="all">Alle Aktionen</option><option value="INSERT">Neu angelegt</option><option value="UPDATE">Bearbeitet</option><option value="DELETE">Gelöscht</option></select></div>
+<div><label for="auditFrom">Änderung von</label><input id="auditFrom" type="date"></div>
+<div><label for="auditTo">Änderung bis</label><input id="auditTo" type="date"></div>
+<button id="auditRefresh" type="button" class="secondary">Protokoll aktualisieren</button>
+<button id="auditExport" type="button" class="secondary">CSV-Export</button>
+</div>
+<div class="tablewrap"><table><thead><tr><th>Zeitpunkt</th><th>Aktion</th><th>Mitarbeiter</th><th>Durchgeführt durch</th><th>Änderungen (vorher → nachher)</th></tr></thead><tbody id="auditEntries"></tbody></table></div>
+<p class="small muted" id="auditMessage" role="status"></p>
+</section>
+<p class="small muted">Datenschutz: Nur für berechtigte Mitarbeitende. Keine Diagnosen erfassen. Aufbewahrungs- und Löschfristen organisatorisch festlegen.</p></div></main>
+<script type="module">
+const $=id=>document.getElementById(id);
+let items=[],editing=null,currentRole=null;
+const isAdmin=()=>currentRole==='admin';
+
+async function api(path,options={}){
+  const res=await fetch(path,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
+  let body=null;
+  try{body=await res.json()}catch(e){body=null}
+  if(!res.ok){const detail=(body&&body.detail)?body.detail:('Fehler '+res.status);throw new Error(detail)}
+  return body;
+}
+
+function showRole(){document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!isAdmin()));$('currentRole').textContent=isAdmin()?'Admin · Careman-Verwaltung':'DRKFKB · Disposition';}
+async function startSession(){
+  try{const data=await api('/api/auth/me');currentRole=data.role;showRole();showAuditView('reports');switchView(true);await load();return true}
+  catch(e){currentRole=null;switchView(false);return false}
+}
+const today=()=>{let d=new Date(),local=new Date(d.getTime()-d.getTimezoneOffset()*60000);return local.toISOString().slice(0,10)};
+const fmt=d=>d?d.split('-').reverse().join('.'):'–';
+const text=(v)=>document.createTextNode(String(v??''));
+const msg=(id,value,isError=false)=>{ $(id).textContent=value;$(id).className=isError?'error small':'small muted';};
+function switchView(loggedIn){$('login').classList.toggle('hidden',loggedIn);$('app').classList.toggle('hidden',!loggedIn);$('logout').classList.toggle('hidden',!loggedIn)}
+function resetForm(){editing=null;$('entryForm').reset();$('reportedAt').value=today();$('sickFrom').value=today();$('sickTo').value=today();$('formTitle').textContent='Krankmeldung erfassen';$('saveBtn').textContent='Meldung speichern';msg('formMessage','')}
+
+$('loginForm').addEventListener('submit',async e=>{
+  e.preventDefault();msg('loginMessage','');
+  const username=$('username').value.trim(),password=$('password').value;
+  $('password').value='';
+  try{
+    const data=await api('/api/auth/login',{method:'POST',body:JSON.stringify({username,password})});
+    currentRole=data.role;showRole();showAuditView('reports');switchView(true);await load();
+  }catch(err){msg('loginMessage',err.message||'Anmeldung fehlgeschlagen.',true)}
+});
+$('logout').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'})}catch(e){}items=[];currentRole=null;showAuditView('reports');auditRows=[];switchView(false)};
+
+$('entryForm').onsubmit=async e=>{
+  e.preventDefault();
+  let from=$('sickFrom').value,to=$('sickTo').value;
+  if(to<from){msg('formMessage','„Krank bis“ darf nicht vor „Krank von“ liegen.',true);return}
+  let payload={reported_at:$('reportedAt').value,employee:$('employee').value.trim(),sick_from:from,sick_to:to,call_at:$('callAt').value||null,accepted_by:$('acceptedBy').value.trim(),notes:$('notes').value.trim()};
+  if(isAdmin())payload.careman_done=$('careman').value==='true';
+  if(!payload.employee){msg('formMessage','Bitte Mitarbeiter angeben.',true);return}
+  $('saveBtn').disabled=true;
+  try{
+    if(editing)await api('/api/reports/'+editing,{method:'PUT',body:JSON.stringify(payload)});
+    else await api('/api/reports',{method:'POST',body:JSON.stringify(payload)});
+    resetForm();msg('formMessage','Meldung gespeichert.');await load();
+  }catch(err){msg('formMessage','Speichern fehlgeschlagen: '+err.message,true)}
+  finally{$('saveBtn').disabled=false}
+};
+$('resetBtn').onclick=resetForm;
+
+async function load(){
+  try{items=await api('/api/reports');render()}
+  catch(err){msg('tableMessage','Abruf fehlgeschlagen: '+err.message,true)}
+}
+function localDateOffset(days){const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+days);return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
+function monthFirst(){return today().slice(0,7)+'-01'}
+function monthLast(){const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(new Date(d.getFullYear(),d.getMonth()+1,0).getDate()).padStart(2,'0')].join('-')}
+function periodRange(){let mode=$('filterPeriod').value;if(mode==='today')return [today(),today()];if(mode==='yesterday')return [localDateOffset(-1),localDateOffset(-1)];if(mode==='month')return [monthFirst(),monthLast()];if(mode==='custom')return [$('filterFrom').value,$('filterTo').value];return ['','']}
+function filtered(){const q=$('search').value.trim().toLocaleLowerCase('de-DE'),[a,b]=periodRange(),careman=isAdmin() ? $('filterCareman').value : 'all';if(a&&b&&a>b)return [];return items.filter(x=>(!q||(x.employee||'').toLocaleLowerCase('de-DE').includes(q))&&(!a||x.sick_to>=a)&&(!b||x.sick_from<=b)&&(careman==='all'||(careman==='open'&&!x.careman_done)||(careman==='done'&&x.careman_done)))}
+function updateDateVisibility(){const custom=$('filterPeriod').value==='custom';$('customDates').classList.toggle('hidden',!custom);if(custom&&!$('filterFrom').value&&!$('filterTo').value){$('filterFrom').value=monthFirst();$('filterTo').value=today()}}
+
+function cell(tr,v){let td=tr.insertCell();td.append(text(v));return td}
+function render(){const t=today();$('kpiToday').textContent=new Set(items.filter(x=>x.sick_from<=t&&x.sick_to>=t).map(x=>x.employee.toLocaleLowerCase())).size;$('kpiOpen').textContent=items.filter(x=>x.sick_to>=t).length;if(isAdmin())$('kpiCareman').textContent=items.filter(x=>!x.careman_done).length;let result=filtered(),body=$('entries');body.replaceChildren();for(let x of result){let tr=body.insertRow();cell(tr,fmt(x.reported_at));cell(tr,x.employee);cell(tr,fmt(x.sick_from));cell(tr,fmt(x.sick_to));cell(tr,x.call_at?.slice(0,5)||'–');cell(tr,x.accepted_by||'–');cell(tr,x.notes||'–');if(isAdmin()){let status=tr.insertCell(),pill=document.createElement('span');pill.className='pill'+(x.careman_done?' done':'');pill.textContent=x.careman_done?'Erledigt':'Offen';status.append(pill);}let buttons=tr.insertCell();if(isAdmin()){let toggle=document.createElement('button');toggle.className=x.careman_done?'outline':'secondary';toggle.textContent=x.careman_done?'Auf offen setzen':'Als eingetragen markieren';toggle.setAttribute('aria-label','Careman für '+x.employee+(x.careman_done?' auf offen setzen':' als eingetragen markieren'));toggle.onclick=()=>toggleCareman(x,toggle);buttons.append(toggle);buttons.append(document.createTextNode(' '));}let edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>editItem(x);buttons.append(edit);buttons.append(document.createTextNode(' '));let del=document.createElement('button');del.className='danger';del.textContent='Löschen';del.setAttribute('aria-label','Krankmeldung von '+x.employee+' löschen');del.onclick=()=>deleteItem(x,del);buttons.append(del)}msg('tableMessage',result.length+' Meldung(en) angezeigt ('+$('filterPeriod').selectedOptions[0].textContent+'). Datensätze geladen: '+items.length+'.'+(($('filterPeriod').value==='custom'&&$('filterFrom').value&&$('filterTo').value&&$('filterFrom').value>$('filterTo').value)?' Hinweis: Von liegt nach Bis.':''))}
+async function toggleCareman(x,button){
+  if(!isAdmin())return;
+  button.disabled=true;
+  const newValue=!x.careman_done;
+  try{
+    const data=await api('/api/reports/'+x.id+'/careman',{method:'PATCH',body:JSON.stringify({careman_done:newValue})});
+    x.careman_done=data.careman_done;render();
+    msg('tableMessage','Careman für '+x.employee+' wurde auf '+(x.careman_done?'Eingetragen':'Offen')+' gesetzt.');
+  }catch(err){button.disabled=false;msg('tableMessage','Careman-Status konnte nicht gespeichert werden: '+err.message,true)}
+}
+async function deleteItem(x,button){
+  const confirmation='Krankmeldung von '+x.employee+' ('+fmt(x.sick_from)+' bis '+fmt(x.sick_to)+') wirklich unwiderruflich löschen?\n\nDiese Aktion entfernt den Eintrag aus der Datenbank. Bereits erstellte Backups können ihn weiterhin enthalten.';
+  if(!window.confirm(confirmation))return;
+  button.disabled=true;
+  try{
+    await api('/api/reports/'+x.id,{method:'DELETE'});
+    if(editing===x.id)resetForm();
+    await load();
+    msg('tableMessage','Krankmeldung von '+x.employee+' wurde gelöscht.');
+  }catch(err){button.disabled=false;msg('tableMessage','Löschen fehlgeschlagen: '+err.message,true)}
+}
+function editItem(x){editing=x.id;for(let [id,v] of Object.entries({reportedAt:x.reported_at,employee:x.employee,sickFrom:x.sick_from,sickTo:x.sick_to,callAt:x.call_at?.slice(0,5)||'',acceptedBy:x.accepted_by||'',notes:x.notes||'',careman:String(x.careman_done)}))$(id).value=v;$('formTitle').textContent='Krankmeldung bearbeiten';$('saveBtn').textContent='Änderungen speichern';window.scrollTo({top:0,behavior:'smooth'});msg('formMessage','Bearbeitungsmodus aktiv.')}
+for(let id of ['search','filterFrom','filterTo','filterCareman'])$(id).addEventListener('input',render);
+$('filterPeriod').addEventListener('change',()=>{updateDateVisibility();render()});
+$('resetFilters').onclick=()=>{$('search').value='';$('filterFrom').value='';$('filterTo').value='';$('filterPeriod').value='today';$('filterCareman').value='all';updateDateVisibility();render()};
+$('exportBtn').onclick=()=>{let cols=['Datum','Meldender','Krank von','Krank bis','Anruf um','Angenommen von','Bemerkungen'];if(isAdmin())cols.push('In Careman eingetragen');let rows=filtered().map(x=>{let row=[fmt(x.reported_at),x.employee,fmt(x.sick_from),fmt(x.sick_to),x.call_at?.slice(0,5)||'',x.accepted_by,x.notes];if(isAdmin())row.push(x.careman_done?'Ja':'Nein');return row;});let csv='\ufeff'+[cols,...rows].map(r=>r.map(v=>'"'+String(v??'').replaceAll('"','""').replace(/^[=+@\-\t\r]/,'\u0027$&')+'"').join(';')).join('\r\n');let a=document.createElement('a'),url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.href=url;a.download='DRKFKB_Krankmeldungen_'+today()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+resetForm();updateDateVisibility();startSession();
+
+// Nur Admin kann das serverseitige Änderungsprotokoll ansehen.
+let auditRows=[];
+const auditFieldNames={reported_at:'Meldedatum',employee:'Mitarbeiter',sick_from:'Krank von',sick_to:'Krank bis',call_at:'Anruf um',accepted_by:'Angenommen von',notes:'Bemerkungen',careman_done:'Careman'};
+function auditDisplay(key,value){if(value===null||value===undefined||value==='')return '–';if(key==='careman_done')return value?'Eingetragen':'Offen';if(['reported_at','sick_from','sick_to'].includes(key))return fmt(value);return String(value)}
+function showAuditView(name){
+  const audit=name==='audit' && isAdmin();
+  $('reportsView').classList.toggle('hidden',audit);
+  $('auditView').classList.toggle('hidden',!audit);
+  $('tabAudit').classList.toggle('active',audit);
+  $('tabReports').classList.toggle('active',!audit);
+  $('tabAudit').setAttribute('aria-selected',String(audit));
+  $('tabReports').setAttribute('aria-selected',String(!audit));
+  if(audit)loadAudit();
+}
+function auditChanges(row){
+  const before=row.old_data||{},after=row.new_data||{};
+  const keys=Object.keys(auditFieldNames);
+  return keys.filter(k=>row.action==='INSERT'?after[k]!==undefined:row.action==='DELETE'?before[k]!==undefined:JSON.stringify(before[k]??null)!==JSON.stringify(after[k]??null))
+    .map(k=>({field:auditFieldNames[k],before:row.action==='INSERT'?'–':auditDisplay(k,before[k]),after:row.action==='DELETE'?'–':auditDisplay(k,after[k])}));
+}
+function filteredAudit(){const name=$('auditSearch').value.trim().toLocaleLowerCase('de-DE'),action=$('auditAction').value,from=$('auditFrom').value,to=$('auditTo').value;
+return auditRows.filter(r=>{
+ const date=new Date(r.event_at), day=[date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-');
+ const person=(r.new_data?.employee||r.old_data?.employee||'').toLocaleLowerCase('de-DE');
+ return (!name||person.includes(name))&&(action==='all'||r.action===action)&&(!from||day>=from)&&(!to||day<=to);
+});}
+function renderAudit(){
+ const body=$('auditEntries');body.replaceChildren();if(!isAdmin())return;
+ const rows=filteredAudit();
+ for(const r of rows){
+  const tr=body.insertRow();cell(tr,new Date(r.event_at).toLocaleString('de-DE'));
+  cell(tr,({INSERT:'Neu angelegt',UPDATE:'Bearbeitet',DELETE:'Gelöscht'})[r.action]||r.action);
+  cell(tr,r.new_data?.employee||r.old_data?.employee||'–');
+  cell(tr,({admin:'Admin',disposition:'DRKFKB / Disposition',system:'System'})[r.actor_role]||r.actor_role||'Unbekannt');
+  const td=tr.insertCell();td.className='audit-item';
+  const changes=auditChanges(r);
+  if(!changes.length)td.append(text('Keine fachliche Änderung'));
+  for(const c of changes){const div=document.createElement('div');div.className='audit-change';const b=document.createElement('b');b.append(text(c.field+': '));div.append(b,text(c.before+' → '+c.after));td.append(div)}
+ }
+ msg('auditMessage',rows.length+' von '+auditRows.length+' Protokolleinträgen angezeigt.');
+}
+async function loadAudit(){
+ if(!isAdmin())return;
+ msg('auditMessage','Protokoll wird geladen …');
+ try{
+   auditRows=await api('/api/audit');
+   renderAudit();
+ }catch(err){msg('auditMessage','Protokoll konnte nicht geladen werden: '+err.message,true)}
+}
+$('tabReports').onclick=()=>showAuditView('reports');
+$('tabAudit').onclick=()=>showAuditView('audit');
+$('auditRefresh').onclick=loadAudit;
+for(const id of ['auditSearch','auditAction','auditFrom','auditTo'])$(id).addEventListener('input',renderAudit);
+$('auditExport').onclick=()=>{
+ const headers=['Zeitpunkt','Aktion','Mitarbeiter','Benutzerrolle','Änderungen'];
+ const records=filteredAudit().map(r=>[new Date(r.event_at).toLocaleString('de-DE'),r.action,r.new_data?.employee||r.old_data?.employee||'',r.actor_role||'',auditChanges(r).map(c=>c.field+': '+c.before+' -> '+c.after).join(' | ')]);
+ const csv='\uFEFF'+[headers,...records].map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
+ const link=document.createElement('a');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));link.href=url;link.download='DRKFKB_Aenderungsprotokoll_'+today()+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+</script></body></html>

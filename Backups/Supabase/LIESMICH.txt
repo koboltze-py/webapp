@@ -1,0 +1,10 @@
+Dieser Ordner enthält die Sicherungen (Exporte) der Supabase-Datenbank.
+Jede Sicherung landet in einem eigenen, nach Datum/Uhrzeit benannten
+Unterordner, z. B. 2026-11-11_05-40-12\, mit je einer CSV- und einer
+JSON-Datei pro Tabelle (Krankmeldungen und Änderungsprotokoll).
+
+Erzeugt wird dies über Supabase-Sicherung\backup_gui.py bzw. per
+Doppelklick auf start_supabase_backup_gui.bat im Hauptordner.
+
+Datenschutz: Diese Sicherungen enthalten Gesundheitsdaten (Krankmeldungen).
+Zugriff beschränken und nach Löschkonzept entsorgen.
