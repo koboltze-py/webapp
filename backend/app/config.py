@@ -8,6 +8,7 @@ danach umgehend angepasst werden (siehe README.md).
 """
 from __future__ import annotations
 
+import json
 import secrets
 from pathlib import Path
 
@@ -31,6 +32,23 @@ if not ENV_PATH.exists():
 
 load_dotenv(ENV_PATH)
 
+# Dauerhafte Supabase-Anbindung: verwendet dieselbe Konfigurationsdatei wie
+# das Supabase-Sicherungs-Werkzeug (Project URL + oeffentlicher anon-Key,
+# beide ohnehin schon in der alten, oeffentlichen Webseite sichtbar - also
+# unkritisch). Ein Geheimschluessel ist NICHT noetig: der Zugriff erfolgt wie
+# bei der alten Webseite per Login (E-Mail+Passwort) und Row-Level-Security.
+SUPABASE_CONFIG_PATH = BASE_DIR.parent / "Supabase-Sicherung" / "config.json"
+
+
+def _load_supabase_config() -> dict:
+    try:
+        return json.loads(SUPABASE_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {}
+
+
+_supabase_config = _load_supabase_config()
+
 
 class Settings:
     secret_key: str = os.getenv("SECRET_KEY", "")
@@ -40,17 +58,19 @@ class Settings:
     disposition_password: str = os.getenv("DISPOSITION_PASSWORD", "")
     session_max_age_seconds: int = 12 * 60 * 60  # 12 Stunden, wie zuvor üblich
 
-    # Optionale dauerhafte Supabase-Anbindung (siehe backend/app/supabase_client.py).
-    # Beide Werte müssen manuell in backend/.env eingetragen werden (nicht
-    # automatisch erzeugt, da es sich um echte Supabase-Zugangsdaten handelt).
-    # SUPABASE_SERVICE_ROLE_KEY umgeht Row-Level-Security vollständig und darf
-    # NIEMALS an den Browser/Frontend weitergegeben werden.
-    supabase_url: str = os.getenv("SUPABASE_URL", "").strip()
-    supabase_service_role_key: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    supabase_url: str = _supabase_config.get("supabase_url", "")
+    supabase_anon_key: str = _supabase_config.get("supabase_anon_key", "")
+    supabase_login_email_admin: str = _supabase_config.get("login_email_admin", "")
+    supabase_login_email_disposition: str = _supabase_config.get("login_email_disposition", "")
 
     @property
     def supabase_enabled(self) -> bool:
-        return bool(self.supabase_url and self.supabase_service_role_key)
+        return bool(
+            self.supabase_url
+            and self.supabase_anon_key
+            and self.supabase_login_email_admin
+            and self.supabase_login_email_disposition
+        )
 
 
 settings = Settings()

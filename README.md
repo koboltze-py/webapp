@@ -88,36 +88,38 @@ gleichzeitig. Die App sollte daher immer nur auf einem Rechner gleichzeitig
 laufen; vor dem Beenden kurz warten, bis OneDrive die Änderung hochgeladen
 hat (grünes Häkchen).
 
-### Optional: dauerhafte Supabase-Anbindung statt lokaler SQLite-Datei
+### Dauerhafte Supabase-Anbindung (aktiv, sobald Supabase-Sicherung\config.json vorhanden ist)
 
-Statt der lokalen `krankmeldungen.db` kann das Backend die Krankmeldungen
-auch dauerhaft im **bestehenden Supabase-Projekt** (demselben, das die
-alte Netlify-Webapp unter `..\Background` verwendet) lesen/schreiben. So
-bleiben alte und neue Datensätze in derselben Datenbank.
+Statt der lokalen `krankmeldungen.db` liest/schreibt das Backend die
+Krankmeldungen dauerhaft im **bestehenden Supabase-Projekt** (demselben,
+das die alte Netlify-Webapp unter `..\Background` verwendet) - genau nach
+demselben Prinzip wie die alte Webseite: Login mit Benutzername+Passwort,
+intern auf eine der beiden technischen E-Mail-Adressen abgebildet
+(`dpfkb@gmx.de` / `bauschke.info@icloud.com`), Anmeldung bei Supabase Auth,
+danach Zugriff über den öffentlichen anon-Key + das persönliche
+Zugriffstoken. Passwörter werden dabei nie gespeichert, nur live an
+Supabase weitergereicht - wie zuvor auch. Ein Service-Role-Key wird NICHT
+benötigt.
 
-Einrichtung (einmalig):
+Die nötigen Werte (Project URL, anon-Key, die beiden Login-E-Mails) stehen
+bereits in `Supabase-Sicherung\config.json` - dieselbe Datei, die auch das
+Sicherungs-Werkzeug verwendet. Ist diese Datei vorhanden und vollständig
+ausgefüllt, aktiviert sich der Supabase-Modus automatisch beim Start; ohne
+sie (oder bei fehlenden Werten) läuft die App unverändert mit der lokalen
+SQLite-Datenbank weiter.
 
-1. Im Supabase-Dashboard des Projekts (`...irtnwpcjzbnruwwbortq.supabase.co`)
-   unter **Project Settings → API** den **`service_role`/`secret`-Key**
-   kopieren. ⚠️ Dieser Key umgeht sämtliche Zugriffsbeschränkungen und darf
-   **niemals** im Frontend, in Supabase-Sicherung\config.json oder in Git
-   landen – nur in `backend\.env`.
-2. Im SQL Editor des Projekts einmalig
-   `Supabase-Sicherung\sql\sick_report_audit.sql` ausführen (legt die
-   Tabelle für das Änderungsprotokoll an).
-3. In `backend\.env` zwei Zeilen ergänzen:
+Einmalige Einrichtung in Supabase (SQL Editor des Projekts):
 
-   ```
-   SUPABASE_URL=https://irtnwpcjzbnruwwbortq.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=<hier den service_role-Key einfügen>
-   ```
-4. Backend neu starten (`start_app.bat`). Sind beide Werte gesetzt, schreibt
-   und liest die App automatisch über Supabase statt über die lokale
-   SQLite-Datei – ohne weitere Code-Änderungen (siehe
-   `backend\app\repository.py`).
+1. `Supabase-Sicherung\sql\sick_report_audit.sql` ausführen (legt die Tabelle
+   für das neue Änderungsprotokoll an, mit Policies für die beiden
+   bestehenden Login-Konten).
+2. Nur falls das Löschen einer Krankmeldung mit „HTTP 403“ fehlschlägt
+   (die alte Webseite hatte absichtlich keine Löschfunktion, siehe
+   `..\Background\README.txt`): zusätzlich
+   `Supabase-Sicherung\sql\enable_delete_on_sick_reports.sql` ausführen.
 
-Ohne diese beiden `.env`-Einträge verhält sich die App unverändert wie
-zuvor (lokale SQLite-Datenbank, keine Cloud-Abhängigkeit).
+Danach Backend neu starten (`start_app.bat`) - keine weiteren Code- oder
+`.env`-Änderungen nötig (siehe `backend\app\repository.py`).
 
 ## 3. Funktionsumfang (identisch zum Original)
 

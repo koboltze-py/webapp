@@ -2,13 +2,15 @@
 
 Zwei Implementierungen hinter derselben Schnittstelle:
 - SqliteReportsRepository:   bisheriges Verhalten, lokale SQLite-Datenbank
-                             über SQLAlchemy (Standard ohne Supabase-Zugangsdaten).
+                             über SQLAlchemy (Standard ohne Supabase-Konfiguration).
 - SupabaseReportsRepository: Daten liegen dauerhaft in Supabase (Postgres),
-                             Zugriff über den Service-Role-Key (umgeht RLS,
-                             siehe supabase_client.py).
+                             Zugriff genau wie bei der alten Webseite per
+                             Login (E-Mail+Passwort) + anon-Key, Row-Level-
+                             Security entscheidet serverseitig (siehe
+                             supabase_client.py und routers/auth.py).
 
 Welche Implementierung verwendet wird, entscheidet
-`settings.supabase_enabled` (siehe config.py / backend/.env). Die Router
+`settings.supabase_enabled` (siehe config.py). Die Router
 (routers/reports.py, routers/audit.py) kennen nur diese gemeinsame
 Schnittstelle und müssen sich um den Speicherort nicht kümmern.
 """
@@ -17,7 +19,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from typing import Any, Iterator, Optional, Union
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 
 from . import supabase_client as sb
 from .config import settings
@@ -172,34 +174,80 @@ class SqliteReportsRepository:
 
 class SupabaseReportsRepository:
     """Dauerhafte Anbindung: Daten liegen in Supabase (Postgres), Zugriff
-    über den Service-Role-Key (siehe supabase_client.py)."""
+    genau wie bei der alten Webseite mit dem anon-Key + dem persönlichen
+    Zugriffstoken aus dem Login (siehe routers/auth.py). Row-Level-Security
+    in Supabase entscheidet serverseitig, was je Rolle sichtbar/änderbar ist."""
+
+    def __init__(self, request: Request):
+        self.request = request
+
+    def _token(self) -> str:
+        token = self.request.session.get("supabase_access_token")
+        if not token:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nicht angemeldet.")
+        return token
+
+    def _refresh(self) -> None:
+        refresh_token = self.request.session.get("supabase_refresh_token")
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sitzung abgelaufen, bitte erneut anmelden.",
+            )
+        try:
+            tokens = sb.refresh_session(refresh_token)
+        except sb.SupabaseError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sitzung abgelaufen, bitte erneut anmelden.",
+            )
+        self.request.session["supabase_access_token"] = tokens["access_token"]
+        self.request.session["supabase_refresh_token"] = tokens["refresh_token"]
+
+    def _call(self, func, *args, **kwargs):
+        """Ruft eine supabase_client-Funktion mit dem aktuellen Zugriffstoken
+        auf; bei abgelaufenem Token wird einmalig per refresh_token erneuert
+        und der Aufruf wiederholt."""
+        try:
+            return func(*args, access_token=self._token(), **kwargs)
+        except sb.SupabaseAuthExpired:
+            self._refresh()
+            return func(*args, access_token=self._token(), **kwargs)
 
     def _write_audit(self, *, action: str, report_id, old_data, new_data, actor_role: str) -> None:
-        sb.insert_row(
-            sb.AUDIT_TABLE,
-            {
-                "report_id": report_id,
-                "action": action,
-                "actor_role": actor_role,
-                "old_data": old_data,
-                "new_data": new_data,
-            },
-        )
+        try:
+            self._call(
+                sb.insert_row,
+                sb.AUDIT_TABLE,
+                {
+                    "report_id": report_id,
+                    "action": action,
+                    "actor_role": actor_role,
+                    "old_data": old_data,
+                    "new_data": new_data,
+                },
+            )
+        except sb.SupabaseError as exc:
+            # Änderungsprotokoll ist "best effort": existiert die Tabelle/
+            # Policy in Supabase (noch) nicht, darf das die eigentliche
+            # Krankmeldungs-Operation nicht blockieren (siehe
+            # Supabase-Sicherung\sql\sick_report_audit.sql).
+            print(f"[WARN] Änderungsprotokoll konnte nicht geschrieben werden: {exc}")
 
     def list_reports(self) -> list[dict[str, Any]]:
-        return sb.list_rows(sb.REPORTS_TABLE, order="reported_at.desc,created_at.desc")
+        return self._call(sb.list_rows, sb.REPORTS_TABLE, order="reported_at.desc,created_at.desc")
 
     def create_report(self, data: dict[str, Any], role: str) -> dict[str, Any]:
         _validate_dates(data["sick_from"], data["sick_to"])
         if role != "admin":
             data["careman_done"] = False
 
-        row = sb.insert_row(sb.REPORTS_TABLE, data)
+        row = self._call(sb.insert_row, sb.REPORTS_TABLE, data)
         self._write_audit(action="INSERT", report_id=row["id"], old_data=None, new_data=_snapshot_dict(row), actor_role=role)
         return row
 
     def _get_report(self, report_id: str) -> dict[str, Any]:
-        row = sb.get_row(sb.REPORTS_TABLE, report_id)
+        row = self._call(sb.get_row, sb.REPORTS_TABLE, report_id)
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
         return row
@@ -213,7 +261,7 @@ class SupabaseReportsRepository:
             data["careman_done"] = old_row.get("careman_done", False)
         data["updated_at"] = datetime.utcnow()
 
-        new_row = sb.update_row(sb.REPORTS_TABLE, report_id, data)
+        new_row = self._call(sb.update_row, sb.REPORTS_TABLE, report_id, data)
         if not new_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
 
@@ -224,7 +272,8 @@ class SupabaseReportsRepository:
         old_row = self._get_report(report_id)
         old_data = _snapshot_dict(old_row)
 
-        new_row = sb.update_row(
+        new_row = self._call(
+            sb.update_row,
             sb.REPORTS_TABLE,
             report_id,
             {"careman_done": careman_done, "updated_at": datetime.utcnow()},
@@ -239,23 +288,26 @@ class SupabaseReportsRepository:
         old_row = self._get_report(report_id)
         old_data = _snapshot_dict(old_row)
 
-        if not sb.delete_row(sb.REPORTS_TABLE, report_id):
+        if not self._call(sb.delete_row, sb.REPORTS_TABLE, report_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
 
         self._write_audit(action="DELETE", report_id=report_id, old_data=old_data, new_data=None, actor_role=role)
 
     def list_audit(self) -> list[dict[str, Any]]:
-        return sb.list_rows(sb.AUDIT_TABLE, order="event_at.desc,id.desc")
+        try:
+            return self._call(sb.list_rows, sb.AUDIT_TABLE, order="event_at.desc,id.desc")
+        except sb.SupabaseError:
+            return []
 
 
 ReportsRepository = Union[SqliteReportsRepository, SupabaseReportsRepository]
 
 
-def get_reports_repository() -> Iterator[ReportsRepository]:
+def get_reports_repository(request: Request) -> Iterator[ReportsRepository]:
     """FastAPI-Dependency: liefert je nach Konfiguration die lokale
     SQLite- oder die dauerhafte Supabase-Implementierung."""
     if settings.supabase_enabled:
-        yield SupabaseReportsRepository()
+        yield SupabaseReportsRepository(request)
         return
 
     db = SessionLocal()
