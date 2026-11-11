@@ -88,6 +88,37 @@ gleichzeitig. Die App sollte daher immer nur auf einem Rechner gleichzeitig
 laufen; vor dem Beenden kurz warten, bis OneDrive die Änderung hochgeladen
 hat (grünes Häkchen).
 
+### Optional: dauerhafte Supabase-Anbindung statt lokaler SQLite-Datei
+
+Statt der lokalen `krankmeldungen.db` kann das Backend die Krankmeldungen
+auch dauerhaft im **bestehenden Supabase-Projekt** (demselben, das die
+alte Netlify-Webapp unter `..\Background` verwendet) lesen/schreiben. So
+bleiben alte und neue Datensätze in derselben Datenbank.
+
+Einrichtung (einmalig):
+
+1. Im Supabase-Dashboard des Projekts (`...irtnwpcjzbnruwwbortq.supabase.co`)
+   unter **Project Settings → API** den **`service_role`/`secret`-Key**
+   kopieren. ⚠️ Dieser Key umgeht sämtliche Zugriffsbeschränkungen und darf
+   **niemals** im Frontend, in Supabase-Sicherung\config.json oder in Git
+   landen – nur in `backend\.env`.
+2. Im SQL Editor des Projekts einmalig
+   `Supabase-Sicherung\sql\sick_report_audit.sql` ausführen (legt die
+   Tabelle für das Änderungsprotokoll an).
+3. In `backend\.env` zwei Zeilen ergänzen:
+
+   ```
+   SUPABASE_URL=https://irtnwpcjzbnruwwbortq.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<hier den service_role-Key einfügen>
+   ```
+4. Backend neu starten (`start_app.bat`). Sind beide Werte gesetzt, schreibt
+   und liest die App automatisch über Supabase statt über die lokale
+   SQLite-Datei – ohne weitere Code-Änderungen (siehe
+   `backend\app\repository.py`).
+
+Ohne diese beiden `.env`-Einträge verhält sich die App unverändert wie
+zuvor (lokale SQLite-Datenbank, keine Cloud-Abhängigkeit).
+
 ## 3. Funktionsumfang (identisch zum Original)
 
 - Krankmeldung erfassen, bearbeiten, löschen

@@ -40,5 +40,17 @@ class Settings:
     disposition_password: str = os.getenv("DISPOSITION_PASSWORD", "")
     session_max_age_seconds: int = 12 * 60 * 60  # 12 Stunden, wie zuvor üblich
 
+    # Optionale dauerhafte Supabase-Anbindung (siehe backend/app/supabase_client.py).
+    # Beide Werte müssen manuell in backend/.env eingetragen werden (nicht
+    # automatisch erzeugt, da es sich um echte Supabase-Zugangsdaten handelt).
+    # SUPABASE_SERVICE_ROLE_KEY umgeht Row-Level-Security vollständig und darf
+    # NIEMALS an den Browser/Frontend weitergegeben werden.
+    supabase_url: str = os.getenv("SUPABASE_URL", "").strip()
+    supabase_service_role_key: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+
+    @property
+    def supabase_enabled(self) -> bool:
+        return bool(self.supabase_url and self.supabase_service_role_key)
+
 
 settings = Settings()

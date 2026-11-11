@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,7 +34,8 @@ class ReportUpdate(ReportBase):
 class ReportOut(ReportBase):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    # int bei lokaler SQLite-Datenbank, str (UUID) bei dauerhafter Supabase-Anbindung
+    id: Union[int, str]
     created_at: datetime
     updated_at: datetime
 
@@ -46,9 +47,9 @@ class CaremanUpdate(BaseModel):
 class AuditOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: Union[int, str]
     event_at: datetime
-    report_id: Optional[int]
+    report_id: Optional[Union[int, str]]
     action: str
     actor_role: str
     old_data: Optional[dict]

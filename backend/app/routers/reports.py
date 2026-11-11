@@ -2,152 +2,65 @@
 (sick_report_audit) festgehalten. Nur die Rolle 'admin' darf den
 Careman-Status setzen oder umschalten – die Disposition kann ihn weder
 beim Anlegen noch beim Bearbeiten verändern (Server-seitig erzwungen,
-analog zur bisherigen Supabase-Policy-Logik im Frontend)."""
+analog zur bisherigen Supabase-Policy-Logik im Frontend).
+
+Die eigentliche Speicherung (lokale SQLite-Datenbank oder dauerhaft in
+Supabase) übernimmt die Repository-Abstraktion in ../repository.py."""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, status
 
-from ..audit import snapshot, write_audit
-from ..database import get_db
 from ..deps import get_current_role, require_admin
-from ..models import SickReport
+from ..repository import ReportsRepository, get_reports_repository
 from ..schemas import CaremanUpdate, ReportCreate, ReportOut, ReportUpdate
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
-def _validate_dates(sick_from, sick_to) -> None:
-    if sick_to < sick_from:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="„Krank bis“ darf nicht vor „Krank von“ liegen.",
-        )
-
-
 @router.get("", response_model=List[ReportOut])
-def list_reports(db: Session = Depends(get_db), role: str = Depends(get_current_role)):
-    return (
-        db.query(SickReport)
-        .order_by(SickReport.reported_at.desc(), SickReport.created_at.desc())
-        .all()
-    )
+def list_reports(
+    repo: ReportsRepository = Depends(get_reports_repository),
+    role: str = Depends(get_current_role),
+):
+    return repo.list_reports()
 
 
 @router.post("", response_model=ReportOut, status_code=status.HTTP_201_CREATED)
 def create_report(
     payload: ReportCreate,
-    db: Session = Depends(get_db),
+    repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(get_current_role),
 ):
-    _validate_dates(payload.sick_from, payload.sick_to)
-    data = payload.model_dump()
-    if role != "admin":
-        data["careman_done"] = False  # Careman wird von der Disposition niemals mitgeschickt
-
-    report = SickReport(**data)
-    db.add(report)
-    db.commit()
-    db.refresh(report)
-
-    write_audit(
-        db,
-        action="INSERT",
-        report_id=report.id,
-        old_data=None,
-        new_data=snapshot(report),
-        actor_role=role,
-    )
-    return report
+    return repo.create_report(payload.model_dump(), role)
 
 
 @router.put("/{report_id}", response_model=ReportOut)
 def update_report(
-    report_id: int,
+    report_id: str,
     payload: ReportUpdate,
-    db: Session = Depends(get_db),
+    repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(get_current_role),
 ):
-    report = db.get(SickReport, report_id)
-    if not report:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
-
-    _validate_dates(payload.sick_from, payload.sick_to)
-    old_data = snapshot(report)
-
-    data = payload.model_dump()
-    if role != "admin":
-        data["careman_done"] = report.careman_done  # Disposition darf Careman nicht ändern
-
-    for key, value in data.items():
-        setattr(report, key, value)
-    report.updated_at = datetime.utcnow()
-
-    db.commit()
-    db.refresh(report)
-
-    write_audit(
-        db,
-        action="UPDATE",
-        report_id=report.id,
-        old_data=old_data,
-        new_data=snapshot(report),
-        actor_role=role,
-    )
-    return report
+    return repo.update_report(report_id, payload.model_dump(), role)
 
 
 @router.patch("/{report_id}/careman", response_model=ReportOut)
 def toggle_careman(
-    report_id: int,
+    report_id: str,
     payload: CaremanUpdate,
-    db: Session = Depends(get_db),
+    repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(require_admin),
 ):
-    report = db.get(SickReport, report_id)
-    if not report:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
-
-    old_data = snapshot(report)
-    report.careman_done = payload.careman_done
-    report.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(report)
-
-    write_audit(
-        db,
-        action="UPDATE",
-        report_id=report.id,
-        old_data=old_data,
-        new_data=snapshot(report),
-        actor_role=role,
-    )
-    return report
+    return repo.toggle_careman(report_id, payload.careman_done, role)
 
 
 @router.delete("/{report_id}")
 def delete_report(
-    report_id: int,
-    db: Session = Depends(get_db),
+    report_id: str,
+    repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(get_current_role),
 ):
-    report = db.get(SickReport, report_id)
-    if not report:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
-
-    old_data = snapshot(report)
-    db.delete(report)
-    db.commit()
-
-    write_audit(
-        db,
-        action="DELETE",
-        report_id=report_id,
-        old_data=old_data,
-        new_data=None,
-        actor_role=role,
-    )
+    repo.delete_report(report_id, role)
     return {"ok": True}

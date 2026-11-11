@@ -16,7 +16,8 @@ from .config import settings
 from .database import Base, engine
 from .routers import audit, auth, reports
 
-Base.metadata.create_all(bind=engine)
+if not settings.supabase_enabled:
+    Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="DRK FKB Krankmeldungen", docs_url="/api/docs", redoc_url=None)
 
