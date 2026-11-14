@@ -84,11 +84,22 @@ class DienstplanEintrag(Base):
     id = Column(Integer, primary_key=True, index=True)
     datum = Column(Date, nullable=False, index=True)
     mitarbeiter_name = Column(String(150), nullable=False)
+    # Verknüpfung zu den Personal-Stammdaten (siehe mitarbeiter_matching.py),
+    # bewusst ohne Fremdschlüssel-Zwang (wie bei den Audit-Tabellen): bleibt
+    # beim Import auf None, wenn der Name keinem (eindeutigen) Stammdatensatz
+    # zugeordnet werden konnte - Grundlage für die Mitarbeiter-Historie.
+    mitarbeiter_id = Column(Integer, nullable=True, index=True)
     dienst_kategorie = Column(String(20), nullable=True)
     start_zeit = Column(String(5), nullable=True)  # "HH:MM"
     end_zeit = Column(String(5), nullable=True)
     ist_krank = Column(Boolean, nullable=False, default=False)
     ist_bulmorfahrer = Column(Boolean, nullable=False, default=False)
+    # Manuell aus der Tag/Nacht/Dispo-Gesamtrechnung herausgenommen (z. B. bei
+    # kurzfristigem Ausfall, siehe index.html "Ausschließen"/"Wieder
+    # einrechnen"). Server-seitig gespeichert, damit es nach einem Neuladen
+    # der Webseite erhalten bleibt (vorher nur clientseitig, ging beim
+    # Neuladen verloren).
+    ausgeschlossen = Column(Boolean, nullable=False, default=False)
     notiz = Column(String(500), nullable=False, default="")
     quelle_datei = Column(String(255), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -124,3 +135,54 @@ class DienstplanAudit(Base):
     actor_username = Column(String(80), nullable=False, default="")
     old_data = Column(JSON, nullable=True)
     new_data = Column(JSON, nullable=True)
+
+
+class MitarbeiterEreignis(Base):
+    """Historie je Mitarbeiter:in (siehe mitarbeiter_historie.py): hält u. a.
+    fest, wie oft/wann jemand krank gemeldet wurde und wann sich die
+    Stammdaten geändert haben. mitarbeiter_name ist ein Abbild zum
+    Ereigniszeitpunkt (bleibt lesbar, auch wenn der Stammdatensatz später
+    umbenannt oder gelöscht wird) - mitarbeiter_id bewusst ohne
+    Fremdschlüssel-Zwang, analog zu den bestehenden Audit-Tabellen."""
+
+    __tablename__ = "mitarbeiter_ereignis"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    mitarbeiter_id = Column(Integer, nullable=True, index=True)
+    mitarbeiter_name = Column(String(150), nullable=False, default="")
+    # z. B. krank_gemeldet / krank_storniert / dienstplan_krank_aufgehoben /
+    # stammdaten_angelegt / stammdaten_geaendert / stammdaten_geloescht
+    ereignis_typ = Column(String(40), nullable=False)
+    beschreibung = Column(String(500), nullable=False, default="")
+    # z. B. "sick_report" / "dienstplan" / "mitarbeiter"
+    bezug_typ = Column(String(30), nullable=True)
+    bezug_id = Column(String(50), nullable=True)
+    actor_username = Column(String(80), nullable=False, default="")
+    actor_role = Column(String(20), nullable=False, default="")
+    details = Column(JSON, nullable=True)
+
+
+class BenutzerAktivitaet(Base):
+    """Logfile je Benutzerkonto (siehe aktivitaet.py): hält fest, welcher
+    Account wann an- oder abgemeldet war und welche Aktion (anlegen/
+    bearbeiten/löschen) er in welchem Bereich ausgeführt hat - unabhängig
+    von den fachlichen Änderungsprotokollen (sick_report_audit,
+    dienstplan_audit), die nur Vorher/Nachher-Werte je Datensatz zeigen."""
+
+    __tablename__ = "benutzer_aktivitaet"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    username = Column(String(80), nullable=False, default="", index=True)
+    rolle = Column(String(20), nullable=False, default="")
+    # z. B. LOGIN / LOGIN_FEHLGESCHLAGEN / LOGOUT / CREATE / UPDATE / DELETE / IMPORT
+    aktion = Column(String(30), nullable=False)
+    # z. B. Anmeldung / Krankmeldungen / Mitarbeiter-Stammdaten /
+    # Benutzerkonten / Dienstplan / Meldungen
+    bereich = Column(String(60), nullable=False, default="")
+    entity_typ = Column(String(30), nullable=True)
+    entity_id = Column(String(50), nullable=True)
+    entity_bezeichnung = Column(String(200), nullable=False, default="")
+    beschreibung = Column(String(500), nullable=False, default="")
+    details = Column(JSON, nullable=True)

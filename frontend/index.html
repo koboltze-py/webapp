@@ -38,14 +38,15 @@ label{font-weight:600;font-size:13px;display:block;margin-bottom:5px}
 .filter-dates{display:contents}
 .filter-dates.hidden{display:none!important}
 .tablewrap{overflow:auto}
-table{border-collapse:collapse;width:100%;font-size:13px;min-width:900px}
-th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border-soft);vertical-align:top}
+table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:900px}
+th,td{text-align:left;padding:6px 9px;border:1px solid var(--border-soft);vertical-align:top;line-height:1.35}
 th{background:#f3f5f7;white-space:nowrap}
 .pill{display:inline-block;background:#fce7e8;color:#95262f;padding:4px 8px;border-radius:99px;font-size:12px;font-weight:600}
 .pill.done{background:#e3f3e9;color:#167346}
 .pill.warn{background:#fff3b0;color:#7a5d00}
 .pill.info{background:#dce8ff;color:#123a8a}
 .dp-divider td{background:#eef0f4;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.04em;padding:6px 10px}
+.dp-divider-klein td{background:transparent;border-top:2px solid var(--border);border-bottom:none;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.04em;padding:3px 9px 2px}
 .dp-virtuell{font-style:italic;color:var(--muted)}
 .dp-stark-abweichend td{background:#fff4e5}
 .dp-stark-abweichend td:first-child{border-left:3px solid #c77700;font-weight:600}
@@ -327,6 +328,17 @@ th{background:#f3f5f7;white-space:nowrap}
             <h2>Mitarbeiter-Stammdaten</h2>
             <div class="tablewrap"><table><thead><tr><th>Name</th><th>Personalnummer</th><th>Funktion</th><th>E-Mail</th><th>Telefon</th><th>Status</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="mitarbeiterEntries"></tbody></table></div>
             <p id="mitarbeiterMessage" class="small muted" role="status"></p>
+          </section>
+          <section class="card hidden" id="mitarbeiterVerlaufCard">
+            <h2>Verlauf: <span id="mitarbeiterVerlaufName">–</span></h2>
+            <section class="summary">
+              <div class="metric"><strong id="mvKrankmeldungen">–</strong><span>Krankmeldungen gesamt</span></div>
+              <div class="metric"><strong id="mvKrankTage">–</strong><span>Kranktage gesamt</span></div>
+              <div class="metric"><strong id="mvLetzteKrank">–</strong><span>Letzte Krankmeldung</span></div>
+            </section>
+            <div class="tablewrap"><table><thead><tr><th>Zeitpunkt</th><th>Ereignis</th><th>Beschreibung</th><th>Durch</th></tr></thead><tbody id="mitarbeiterVerlaufEntries"></tbody></table></div>
+            <p class="small muted" id="mitarbeiterVerlaufMessage" role="status"></p>
+            <div class="actions"><button id="mitarbeiterVerlaufSchliessen" type="button" class="secondary">Schließen</button></div>
           </section>
         </section>
 
@@ -678,11 +690,35 @@ function renderMitarbeiter(){
     cell(tr,m.nachname+', '+m.vorname);cell(tr,m.personalnummer||'–');cell(tr,m.funktion||'–');cell(tr,m.email||'–');cell(tr,m.telefon||'–');
     const statusCell=tr.insertCell();const pill=document.createElement('span');pill.className='pill'+(m.aktiv?' done':'');pill.textContent=m.aktiv?'Aktiv':'Inaktiv';statusCell.append(pill);
     const actionCell=tr.insertCell();actionCell.dataset.minRole='schichtleitung';actionCell.classList.toggle('hidden',!roleAtLeast('schichtleitung'));
+    const verlauf=document.createElement('button');verlauf.className='secondary';verlauf.textContent='Verlauf';verlauf.onclick=()=>zeigeMitarbeiterVerlauf(m);actionCell.append(verlauf,document.createTextNode(' '));
     const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>editMitarbeiter(m);actionCell.append(edit,document.createTextNode(' '));
     const del=document.createElement('button');del.className='danger';del.textContent='Löschen';del.onclick=()=>deleteMitarbeiter(m);actionCell.append(del);
   }
   msg('mitarbeiterMessage',mitarbeiterListe.length+' Mitarbeiter:in(nen) geladen.');
 }
+const MITARBEITER_EREIGNIS_LABEL={krank_gemeldet:'Krank gemeldet',krankmeldung_aktualisiert:'Krankmeldung aktualisiert',krankmeldung_geloescht:'Krankmeldung gelöscht',dienstplan_krank_aufgehoben:'Krank-Status aufgehoben',stammdaten_angelegt:'Stammdaten angelegt',stammdaten_geaendert:'Stammdaten geändert',stammdaten_deaktiviert:'Stammdaten deaktiviert',stammdaten_geloescht:'Stammdaten gelöscht'};
+async function zeigeMitarbeiterVerlauf(m){
+  $('mitarbeiterVerlaufName').textContent=m.vorname+' '+m.nachname;
+  $('mitarbeiterVerlaufCard').classList.remove('hidden');
+  $('mitarbeiterVerlaufCard').scrollIntoView({behavior:'smooth',block:'center'});
+  msg('mitarbeiterVerlaufMessage','Lädt …');
+  try{
+    const h=await api('/api/mitarbeiter/'+m.id+'/historie');
+    $('mvKrankmeldungen').textContent=h.anzahl_krankmeldungen;
+    $('mvKrankTage').textContent=h.anzahl_krank_tage_gesamt;
+    $('mvLetzteKrank').textContent=h.letzte_krankmeldung_von?(fmt(h.letzte_krankmeldung_von)+' – '+fmt(h.letzte_krankmeldung_bis)):'–';
+    const body=$('mitarbeiterVerlaufEntries');body.replaceChildren();
+    for(const ev of h.ereignisse){
+      const tr=body.insertRow();
+      cell(tr,new Date(ev.event_at).toLocaleString('de-DE'));
+      cell(tr,MITARBEITER_EREIGNIS_LABEL[ev.ereignis_typ]||ev.ereignis_typ);
+      cell(tr,ev.beschreibung||'–');
+      cell(tr,ev.actor_username||'–');
+    }
+    msg('mitarbeiterVerlaufMessage',h.ereignisse.length+' Ereignis(se).');
+  }catch(err){msg('mitarbeiterVerlaufMessage','Verlauf konnte nicht geladen werden: '+err.message,true)}
+}
+$('mitarbeiterVerlaufSchliessen').onclick=()=>$('mitarbeiterVerlaufCard').classList.add('hidden');
 function editMitarbeiter(m){
   mitarbeiterEditing=m.id;
   $('maVorname').value=m.vorname;$('maNachname').value=m.nachname;$('maPersonalnummer').value=m.personalnummer||'';$('maFunktion').value=m.funktion||'';$('maEmail').value=m.email||'';$('maTelefon').value=m.telefon||'';$('maAktiv').value=String(m.aktiv);$('maNotizen').value=m.notizen||'';
@@ -740,7 +776,7 @@ $('auditExport').onclick=()=>{
 };
 
 /* ============================= Dienstplan ============================= */
-let dienstplanRows=[],dienstplanEditingId=null,dienstplanEditingEntry=null,dienstplanKrankPopupEntry=null,dienstplanKrankPopupQueue=[],dienstplanAusschlussSet=new Set();
+let dienstplanRows=[],dienstplanEditingId=null,dienstplanEditingEntry=null,dienstplanKrankPopupEntry=null,dienstplanKrankPopupQueue=[];
 $('dienstplanImportForm').onsubmit=async e=>{
   e.preventDefault();
   const file=$('dienstplanDatei').files[0];
@@ -753,6 +789,8 @@ $('dienstplanImportForm').onsubmit=async e=>{
     let text=result.anzahl_eintraege+' Einträge importiert ('+result.anzahl_krank+' krank, '+result.anzahl_bulmorfahrer+' Bulmor-Fahrer:in).';
     if(result.unbekannte_dienste.length)text+=' Unbekannte Dienstkürzel: '+result.unbekannte_dienste.join(', ');
     if(result.krank_ohne_meldung&&result.krank_ohne_meldung.length)text+=' · '+result.krank_ohne_meldung.length+' krank gemeldete:r Mitarbeiter:in ohne Krankmeldung erkannt.';
+    if(result.nicht_zugeordnete_mitarbeiter&&result.nicht_zugeordnete_mitarbeiter.length)text+=' · Nicht den Stammdaten zugeordnet: '+result.nicht_zugeordnete_mitarbeiter.join(', ')+'.';
+    if(result.unsichere_zuordnungen&&result.unsichere_zuordnungen.length)text+=' · Bitte prüfen (unsichere Zuordnung wegen Tippfehler/Dreher): '+result.unsichere_zuordnungen.map(u=>u.mitarbeiter_name+' → '+u.vorschlag).join(', ')+'.';
     msg('dienstplanImportMessage',text);
     $('dienstplanDatum').value=result.datum;
     await loadDienstplan();
@@ -778,7 +816,6 @@ for(const id of ['dienstplanSuche','dienstplanStatusFilter','dienstplanSortierun
 
 async function loadDienstplan(){
   const tag=$('dienstplanDatum').value||today();
-  dienstplanAusschlussSet=new Set();
   try{
     dienstplanRows=await api('/api/dienstplan?von='+tag+'&bis='+tag);
     renderDienstplan();
@@ -810,7 +847,7 @@ function zeitModus(zeiten){
 function berechneStarkAbweichendeIds(rows){
   const gruppen={};
   for(const e of rows){
-    if(e.ist_krank||e.virtuell||dienstplanAusschlussSet.has(String(e.id)))continue;
+    if(e.ist_krank||e.virtuell||e.ausgeschlossen)continue;
     if((e.dienst_kategorie||'').trim().toUpperCase()==='R')continue;
     const kat=e.effektive_kategorie||e.dienst_kategorie||'?';
     (gruppen[kat]=gruppen[kat]||[]).push(e);
@@ -830,7 +867,7 @@ function berechneStarkAbweichendeIds(rows){
 function renderDienstplanZusammenfassung(){
   // Manuell ausgeschlossene, Rufbereitschaft (Dienst-Kürzel "R") und Kranke
   // zählen nirgends in der Gesamtrechnung mit.
-  const relevant=dienstplanRows.filter(e=>!dienstplanAusschlussSet.has(String(e.id))&&(e.dienst_kategorie||'').trim().toUpperCase()!=='R');
+  const relevant=dienstplanRows.filter(e=>!e.ausgeschlossen&&(e.dienst_kategorie||'').trim().toUpperCase()!=='R');
   const anwesend=relevant.filter(e=>!e.ist_krank);
   const tag=anwesend.filter(e=>e.schicht_typ==='tag'&&!e.ist_dispo);
   const nacht=anwesend.filter(e=>e.schicht_typ==='nacht'&&!e.ist_dispo);
@@ -889,8 +926,18 @@ function renderDienstplan(){
   const starkAbweichendIds=berechneStarkAbweichendeIds(dienstplanRows);
   const body=$('dienstplanEntries');body.replaceChildren();
   let vorherigeDispo=null;
+  let vorherigeKategorie=null;
+  // Kleine Trennlinien innerhalb der Standard-Sortierung, zusätzlich zur
+  // bestehenden "Dispo"-Trennlinie: markiert den Beginn der T10-, T8- und
+  // N10-Gruppe (siehe dienstplan_sortierung.py).
+  const TRENNLINIEN_KATEGORIEN=new Set(['T10','T8','N10']);
   for(const e of rows){
-    if($('dienstplanSortierung').value==='standard' && e.ist_dispo && vorherigeDispo===false){
+    const istStandard=$('dienstplanSortierung').value==='standard';
+    if(istStandard && TRENNLINIEN_KATEGORIEN.has(e.effektive_kategorie) && e.effektive_kategorie!==vorherigeKategorie){
+      const divider=body.insertRow();divider.className='dp-divider dp-divider-klein';const td=divider.insertCell();td.colSpan=8;td.append(text(e.effektive_kategorie));
+    }
+    vorherigeKategorie=e.effektive_kategorie;
+    if(istStandard && e.ist_dispo && vorherigeDispo===false){
       const divider=body.insertRow();divider.className='dp-divider';const td=divider.insertCell();td.colSpan=8;td.append(text('Dispo'));
     }
     vorherigeDispo=e.ist_dispo;
@@ -907,18 +954,24 @@ function renderDienstplan(){
     if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend&&!e.virtuell&&!starkAbweichendIds.has(String(e.id)))statusCell.append(text('–'));
     cell(tr,e.notiz||'–');
     const rechnungCell=tr.insertCell();
-    const ausgeschlossen=dienstplanAusschlussSet.has(String(e.id));
-    const rechnungBtn=document.createElement('button');
-    rechnungBtn.className='secondary small';
-    rechnungBtn.textContent=ausgeschlossen?'Wieder einrechnen':'Ausschließen';
-    rechnungBtn.title=ausgeschlossen?'Wieder in die Tag/Nacht/Dispo-Gesamtrechnung einbeziehen.':'Aus der Tag/Nacht/Dispo-Gesamtrechnung herausnehmen (z. B. bei kurzfristigem Ausfall).';
-    rechnungBtn.onclick=()=>{
-      const id=String(e.id);
-      if(dienstplanAusschlussSet.has(id))dienstplanAusschlussSet.delete(id);else dienstplanAusschlussSet.add(id);
-      renderDienstplan();renderDienstplanZusammenfassung();
-    };
-    rechnungCell.append(rechnungBtn);
+    const ausgeschlossen=!!e.ausgeschlossen;
+    if(!e.virtuell&&roleAtLeast('schichtleitung')){
+      const rechnungBtn=document.createElement('button');
+      rechnungBtn.className='secondary small';
+      rechnungBtn.textContent=ausgeschlossen?'Wieder einrechnen':'Ausschließen';
+      rechnungBtn.title=ausgeschlossen?'Wieder in die Tag/Nacht/Dispo-Gesamtrechnung einbeziehen.':'Aus der Tag/Nacht/Dispo-Gesamtrechnung herausnehmen (z. B. bei kurzfristigem Ausfall).';
+      rechnungBtn.onclick=async()=>{
+        rechnungBtn.disabled=true;
+        try{
+          const aktualisiert=await api('/api/dienstplan/'+e.id,{method:'PUT',body:JSON.stringify({ausgeschlossen:!ausgeschlossen})});
+          e.ausgeschlossen=aktualisiert.ausgeschlossen;
+          renderDienstplan();renderDienstplanZusammenfassung();
+        }catch(err){rechnungBtn.disabled=false;msg('dienstplanMessage','Konnte nicht gespeichert werden: '+err.message,true)}
+      };
+      rechnungCell.append(rechnungBtn);
+    }
     if(ausgeschlossen){const p=document.createElement('span');p.className='pill';p.style.marginLeft='6px';p.textContent='ausgeschlossen';rechnungCell.append(p)}
+    else if(e.virtuell||!roleAtLeast('schichtleitung'))rechnungCell.append(text('–'));
     const actionCell=tr.insertCell();actionCell.dataset.minRole='schichtleitung';actionCell.classList.toggle('hidden',!roleAtLeast('schichtleitung'));
     if(e.virtuell){actionCell.append(text('–'))}
     else{const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit)}
@@ -944,16 +997,27 @@ $('dienstplanEditForm').onsubmit=async e=>{
   if(!dienstplanEditingId)return;
   const warKrank=!!(dienstplanEditingEntry&&dienstplanEditingEntry.ist_krank);
   const istJetztKrank=$('dpEditKrank').value==='true';
+  // Krank-Status wird gerade entfernt: vorher fragen, ob die zugehörige(n)
+  // laufende(n) Krankmeldung(en) dieser Person für diesen Tag ebenfalls
+  // gelöscht werden sollen (siehe routers/dienstplan.py).
+  let auchKrankmeldungLoeschen=false;
+  if(warKrank&&!istJetztKrank){
+    auchKrankmeldungLoeschen=window.confirm(
+      'Der Krank-Status von '+(dienstplanEditingEntry.mitarbeiter_name||'')+' wurde entfernt.\n\n'
+      +'Soll die zugehörige Krankmeldung für diesen Tag ebenfalls gelöscht werden?'
+    );
+  }
   const payload={
     ist_krank:istJetztKrank,
     ist_bulmorfahrer:$('dpEditBulli').value==='true',
     start_zeit:$('dpEditBeginn').value||null,
     end_zeit:$('dpEditEnde').value||null,
     notiz:$('dpEditNotiz').value,
+    auch_krankmeldung_loeschen:auchKrankmeldungLoeschen,
   };
   try{
     await api('/api/dienstplan/'+dienstplanEditingId,{method:'PUT',body:JSON.stringify(payload)});
-    msg('dienstplanEditMessage','Gespeichert.');
+    msg('dienstplanEditMessage',auchKrankmeldungLoeschen?'Gespeichert, Krankmeldung gelöscht.':'Gespeichert.');
     $('dienstplanEditCard').classList.add('hidden');
     if(roleAtLeast('admin')&&!$('dienstplanAuditWrap').classList.contains('hidden'))await loadDienstplanAudit();
     if(!warKrank&&istJetztKrank)openKrankPopup(dienstplanEditingEntry);

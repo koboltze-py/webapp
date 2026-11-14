@@ -198,6 +198,7 @@ def _snapshot_dienstplan_orm(row: DienstplanEintrag) -> dict[str, Any]:
         "end_zeit": row.end_zeit,
         "ist_krank": row.ist_krank,
         "ist_bulmorfahrer": row.ist_bulmorfahrer,
+        "ausgeschlossen": row.ausgeschlossen,
         "notiz": row.notiz,
     }
 
@@ -213,6 +214,12 @@ class SqliteDienstplanRepository:
         if bis:
             q = q.filter(DienstplanEintrag.datum <= bis)
         return q.order_by(DienstplanEintrag.datum.desc(), DienstplanEintrag.mitarbeiter_name).all()
+
+    def get_eintrag(self, eintrag_id) -> DienstplanEintrag:
+        row = self.db.get(DienstplanEintrag, int(eintrag_id))
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dienstplan-Eintrag nicht gefunden.")
+        return row
 
     def replace_tag(self, tag: date, eintraege: list[dict[str, Any]], quelle_datei: str) -> list[DienstplanEintrag]:
         """Ersetzt alle Einträge eines Tages durch einen frischen Import
@@ -271,6 +278,12 @@ class SupabaseDienstplanRepository(_SupabaseRoleRepository):
             rows = [r for r in rows if r.get("datum") and r["datum"] <= bis.isoformat()]
         return rows
 
+    def get_eintrag(self, eintrag_id) -> dict[str, Any]:
+        row = self._call(sb.get_row, sb.DIENSTPLAN_TABLE, eintrag_id)
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dienstplan-Eintrag nicht gefunden.")
+        return row
+
     def replace_tag(self, tag: date, eintraege: list[dict[str, Any]], quelle_datei: str) -> list[dict[str, Any]]:
         bestehende = self._call(sb.list_rows, sb.DIENSTPLAN_TABLE, order="id.asc")
         for row in bestehende:
@@ -299,8 +312,8 @@ class SupabaseDienstplanRepository(_SupabaseRoleRepository):
                     "action": "UPDATE",
                     "actor_role": actor_role,
                     "actor_username": actor_username,
-                    "old_data": {k: old_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "notiz")},
-                    "new_data": {k: new_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "notiz")},
+                    "old_data": {k: old_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "ausgeschlossen", "notiz")},
+                    "new_data": {k: new_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "ausgeschlossen", "notiz")},
                 },
             )
         except sb.SupabaseError as exc:

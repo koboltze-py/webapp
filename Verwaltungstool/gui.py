@@ -36,6 +36,18 @@ import requests
 DEFAULT_SERVER = "http://127.0.0.1:8000"
 ROLLEN = ["mitarbeiter", "schichtleitung", "admin"]
 ROLLEN_LABEL = {"mitarbeiter": "Mitarbeiter", "schichtleitung": "Schichtleitung", "admin": "Admin"}
+# Lesbare Bezeichnung je Mitarbeiter-Historie-Ereignistyp (siehe
+# backend\app\models.py:MitarbeiterEreignis / routers/mitarbeiter.py).
+EREIGNIS_LABEL = {
+    "krank_gemeldet": "Krank gemeldet",
+    "krankmeldung_aktualisiert": "Krankmeldung aktualisiert",
+    "krankmeldung_geloescht": "Krankmeldung gelöscht",
+    "dienstplan_krank_aufgehoben": "Krank-Status im Dienstplan aufgehoben",
+    "stammdaten_angelegt": "Stammdaten angelegt",
+    "stammdaten_geaendert": "Stammdaten geändert",
+    "stammdaten_deaktiviert": "Stammdaten deaktiviert",
+    "stammdaten_geloescht": "Stammdaten gelöscht",
+}
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = PROJECT_ROOT / "backend" / ".env"
@@ -79,6 +91,17 @@ class ApiClient:
             return None
         return resp.json()
 
+    def _handle_binary(self, resp: requests.Response) -> bytes:
+        """Wie _handle, aber für Datei-Downloads (Excel-Export): gibt die
+        Rohdaten statt eines JSON-Objekts zurück."""
+        if resp.status_code >= 400:
+            try:
+                detail = resp.json().get("detail", resp.text)
+            except Exception:
+                detail = resp.text
+            raise ApiError(str(detail))
+        return resp.content
+
     def login(self, base_url: str, username: str, password: str):
         self.base_url = base_url.rstrip("/")
         resp = self.session.post(self._url("/api/auth/login"), json={"username": username, "password": password}, timeout=30)
@@ -115,6 +138,25 @@ class ApiClient:
 
     def update_benutzer(self, bid, data: dict):
         return self._handle(self.session.put(self._url(f"/api/benutzer/{bid}"), json=data, timeout=30))
+
+    # ---- Mitarbeiter-Historie ----------------------------------------------
+    def get_mitarbeiter_historie(self, mid):
+        return self._handle(self.session.get(self._url(f"/api/mitarbeiter/{mid}/historie"), timeout=30))
+
+    def export_mitarbeiter_historie(self, mitarbeiter_id=None) -> bytes:
+        params = {"mitarbeiter_id": mitarbeiter_id} if mitarbeiter_id else {}
+        resp = self.session.get(self._url("/api/mitarbeiter/historie/export"), params=params, timeout=60)
+        return self._handle_binary(resp)
+
+    # ---- Benutzerprotokoll (Logfile je Account) ----------------------------
+    def list_benutzerprotokoll(self, username: str | None = None):
+        params = {"username": username} if username else {}
+        return self._handle(self.session.get(self._url("/api/audit/benutzerprotokoll"), params=params, timeout=30))
+
+    def export_benutzerprotokoll(self, username: str | None = None) -> bytes:
+        params = {"username": username} if username else {}
+        resp = self.session.get(self._url("/api/audit/benutzerprotokoll/export"), params=params, timeout=60)
+        return self._handle_binary(resp)
 
     # ---- Dienstplan ---------------------------------------------------------
     def import_dienstplan(self, file_path: Path):
@@ -472,6 +514,7 @@ class App(tk.Tk):
         self._build_stammdaten_import_tab(notebook)
         self._build_benutzer_tab(notebook)
         self._build_dienstplan_tab(notebook)
+        self._build_protokolle_tab(notebook)
         self._build_datenhaltung_tab(notebook)
 
         self._refresh_mitarbeiter()
@@ -522,6 +565,7 @@ class App(tk.Tk):
         ttk.Button(btns, text="Neu / Zurücksetzen", command=self._reset_mitarbeiter_form).pack(side="left")
         ttk.Button(btns, text="Speichern", command=self._save_mitarbeiter).pack(side="left", padx=6)
         ttk.Button(btns, text="Löschen", command=self._delete_mitarbeiter).pack(side="left")
+        ttk.Button(btns, text="Verlauf anzeigen", command=self._zeige_mitarbeiter_verlauf).pack(side="left", padx=6)
         ttk.Button(btns, text="Aktualisieren", command=self._refresh_mitarbeiter).pack(side="left", padx=6)
 
         for c in range(3):
@@ -603,6 +647,53 @@ class App(tk.Tk):
                 self.after(0, self._refresh_mitarbeiter)
             except (ApiError, requests.RequestException) as e:
                 self.after(0, lambda: messagebox.showerror("Löschen fehlgeschlagen", str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _zeige_mitarbeiter_verlauf(self):
+        if not self.selected_mitarbeiter_id:
+            messagebox.showinfo("Hinweis", "Bitte zuerst eine Zeile in der Liste auswählen.")
+            return
+        mid = self.selected_mitarbeiter_id
+        name = f"{self.ma_vars['vorname'].get()} {self.ma_vars['nachname'].get()}"
+
+        fenster = tk.Toplevel(self)
+        fenster.title(f"Verlauf: {name}")
+        fenster.geometry("900x500")
+
+        kennzahlen_var = tk.StringVar(value="Lädt …")
+        ttk.Label(fenster, textvariable=kennzahlen_var, padding=10, justify="left").pack(anchor="w")
+
+        columns = ("event_at", "ereignis", "beschreibung", "durch")
+        headers = ("Zeitpunkt", "Ereignis", "Beschreibung", "Durch")
+        tree = ttk.Treeview(fenster, columns=columns, show="headings", height=18)
+        for col, head, width in zip(columns, headers, (150, 170, 400, 110)):
+            tree.heading(col, text=head)
+            tree.column(col, width=width, anchor="w")
+        tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        def work():
+            try:
+                h = self.api.get_mitarbeiter_historie(mid)
+                self.after(0, lambda: fill(h))
+            except (ApiError, requests.RequestException) as e:
+                self.after(0, lambda: kennzahlen_var.set(f"Verlauf konnte nicht geladen werden: {e}"))
+
+        def fill(h: dict):
+            letzte = (
+                f"{h['letzte_krankmeldung_von']} – {h['letzte_krankmeldung_bis']}"
+                if h.get("letzte_krankmeldung_von") else "–"
+            )
+            kennzahlen_var.set(
+                f"Krankmeldungen gesamt: {h['anzahl_krankmeldungen']}    "
+                f"Kranktage gesamt: {h['anzahl_krank_tage_gesamt']}    "
+                f"Letzte Krankmeldung: {letzte}"
+            )
+            for ev in h["ereignisse"]:
+                tree.insert("", "end", values=(
+                    ev.get("event_at", ""), EREIGNIS_LABEL.get(ev.get("ereignis_typ"), ev.get("ereignis_typ")),
+                    ev.get("beschreibung", ""), ev.get("actor_username", ""),
+                ))
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -979,12 +1070,118 @@ class App(tk.Tk):
         )
         if result.get("unbekannte_dienste"):
             self._log_dienstplan("Unbekannte Dienstkürzel (bitte prüfen): " + ", ".join(result["unbekannte_dienste"]))
+        if result.get("nicht_zugeordnete_mitarbeiter"):
+            self._log_dienstplan(
+                "Nicht den Mitarbeiter-Stammdaten zugeordnet (bitte Stammdaten prüfen/ergänzen): "
+                + ", ".join(result["nicht_zugeordnete_mitarbeiter"])
+            )
+        if result.get("unsichere_zuordnungen"):
+            self._log_dienstplan(
+                "Unsichere Zuordnung (Tippfehler/Dreher erkannt, bitte prüfen): "
+                + ", ".join(f"{u['mitarbeiter_name']} → {u['vorschlag']}" for u in result["unsichere_zuordnungen"])
+            )
         messagebox.showinfo("Import abgeschlossen", f"{result['anzahl_eintraege']} Einträge importiert.")
 
     def _on_import_failed(self, message: str):
         self.dp_import_button.configure(state="normal")
         self._log_dienstplan(f"FEHLER: {message}")
         messagebox.showerror("Import fehlgeschlagen", message)
+
+    # ---- Tab: Protokolle (Mitarbeiter-Historie + Benutzerprotokoll, Excel) --
+    def _build_protokolle_tab(self, notebook: ttk.Notebook):
+        tab = ttk.Frame(notebook, padding=10)
+        notebook.add(tab, text="Historie & Protokolle")
+
+        historie_frame = ttk.LabelFrame(tab, text="Mitarbeiter-Historie (wie oft/wann krank, Stammdaten-Änderungen)", padding=10)
+        historie_frame.pack(fill="x", pady=(0, 14))
+        ttk.Label(
+            historie_frame,
+            text="Für eine:n einzelne:n Mitarbeiter:in siehe Button \"Verlauf anzeigen\" im Reiter "
+            "\"Mitarbeiter-Stammdaten\". Hier: kompletter Export über ALLE Mitarbeitenden als Excel.",
+            justify="left", wraplength=800,
+        ).pack(anchor="w", pady=(0, 8))
+        ttk.Button(historie_frame, text="Mitarbeiter-Historie als Excel exportieren …", command=self._export_mitarbeiter_historie).pack(anchor="w")
+
+        protokoll_frame = ttk.LabelFrame(tab, text="Benutzerprotokoll (Logfile je Account: Login/Logout, Anlegen/Bearbeiten/Löschen)", padding=10)
+        protokoll_frame.pack(fill="both", expand=True)
+
+        filter_frame = ttk.Frame(protokoll_frame)
+        filter_frame.pack(fill="x", pady=(0, 8))
+        ttk.Label(filter_frame, text="Benutzername (leer = alle):").pack(side="left")
+        self.bp_username_var = tk.StringVar()
+        ttk.Entry(filter_frame, textvariable=self.bp_username_var, width=20).pack(side="left", padx=(6, 10))
+        ttk.Button(filter_frame, text="Anzeigen", command=self._refresh_benutzerprotokoll).pack(side="left")
+        ttk.Button(filter_frame, text="Als Excel exportieren …", command=self._export_benutzerprotokoll).pack(side="left", padx=(10, 0))
+
+        columns = ("event_at", "username", "rolle", "aktion", "bereich", "betrifft", "beschreibung")
+        headers = ("Zeitpunkt", "Benutzer", "Rolle", "Aktion", "Bereich", "Betrifft", "Beschreibung")
+        self.bp_tree = ttk.Treeview(tab, columns=columns, show="headings", height=14)
+        for col, head, width in zip(columns, headers, (140, 100, 90, 90, 140, 150, 260)):
+            self.bp_tree.heading(col, text=head)
+            self.bp_tree.column(col, width=width, anchor="w")
+        self.bp_tree.pack(fill="both", expand=True, pady=(0, 6))
+        self.bp_message_var = tk.StringVar(value="")
+        ttk.Label(tab, textvariable=self.bp_message_var).pack(anchor="w")
+
+    def _export_mitarbeiter_historie(self):
+        pfad = filedialog.asksaveasfilename(
+            title="Mitarbeiter-Historie exportieren", defaultextension=".xlsx",
+            filetypes=[("Excel-Datei", "*.xlsx")], initialfile="Mitarbeiter-Historie.xlsx",
+        )
+        if not pfad:
+            return
+
+        def work():
+            try:
+                daten = self.api.export_mitarbeiter_historie()
+                Path(pfad).write_bytes(daten)
+                self.after(0, lambda: messagebox.showinfo("Export abgeschlossen", f"Gespeichert unter:\n{pfad}"))
+            except (ApiError, requests.RequestException) as e:
+                self.after(0, lambda: messagebox.showerror("Export fehlgeschlagen", str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _refresh_benutzerprotokoll(self):
+        username = self.bp_username_var.get().strip() or None
+        self.bp_message_var.set("Lädt …")
+
+        def work():
+            try:
+                rows = self.api.list_benutzerprotokoll(username)
+                self.after(0, lambda: self._fill_benutzerprotokoll(rows))
+            except (ApiError, requests.RequestException) as e:
+                self.after(0, lambda: self.bp_message_var.set(f"Protokoll konnte nicht geladen werden: {e}"))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _fill_benutzerprotokoll(self, rows: list[dict]):
+        self.bp_tree.delete(*self.bp_tree.get_children())
+        for r in rows:
+            self.bp_tree.insert("", "end", values=(
+                r.get("event_at", ""), r.get("username", ""), ROLLEN_LABEL.get(r.get("rolle"), r.get("rolle", "")),
+                r.get("aktion", ""), r.get("bereich", ""), r.get("entity_bezeichnung", ""), r.get("beschreibung", ""),
+            ))
+        self.bp_message_var.set(f"{len(rows)} Eintrag/Einträge geladen.")
+
+    def _export_benutzerprotokoll(self):
+        username = self.bp_username_var.get().strip() or None
+        vorschlag = f"Benutzerprotokoll_{username}.xlsx" if username else "Benutzerprotokoll.xlsx"
+        pfad = filedialog.asksaveasfilename(
+            title="Benutzerprotokoll exportieren", defaultextension=".xlsx",
+            filetypes=[("Excel-Datei", "*.xlsx")], initialfile=vorschlag,
+        )
+        if not pfad:
+            return
+
+        def work():
+            try:
+                daten = self.api.export_benutzerprotokoll(username)
+                Path(pfad).write_bytes(daten)
+                self.after(0, lambda: messagebox.showinfo("Export abgeschlossen", f"Gespeichert unter:\n{pfad}"))
+            except (ApiError, requests.RequestException) as e:
+                self.after(0, lambda: messagebox.showerror("Export fehlgeschlagen", str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
 
     # ---- Tab: Datenhaltung (lokal/Supabase) --------------------------------
     def _build_datenhaltung_tab(self, notebook: ttk.Notebook):

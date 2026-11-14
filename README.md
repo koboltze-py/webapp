@@ -181,14 +181,19 @@ Einmalige Einrichtung in Supabase:
    (`benutzer.sql`, `mitarbeiter.sql`, `dienstplan.sql`, `meldungen.sql`,
    `upgrade_audit_rollenstufen.sql`) enthalten denselben Inhalt einzeln,
    falls das lieber Schritt für Schritt gemacht werden soll.
-4. `Supabase-Sicherung\config.json` um `"login_email_mitarbeiter"` ergänzen
+4. Zusätzlich (für Mitarbeiter-Historie + Benutzerprotokoll, siehe
+   Abschnitt 3):
+   `Supabase-Sicherung\sql\mitarbeiter_historie_und_benutzer_aktivitaet.sql`
+   ausführen (ergänzt `dienstplan.mitarbeiter_id` sowie die beiden neuen
+   Tabellen `mitarbeiter_ereignis` und `benutzer_aktivitaet`).
+5. `Supabase-Sicherung\config.json` um `"login_email_mitarbeiter"` ergänzen
    (siehe `config.example.json`).
-5. In `backend\.env` die drei Service-Passwörter eintragen, mit denen sich
+6. In `backend\.env` die drei Service-Passwörter eintragen, mit denen sich
    das Backend selbst (nicht die Mitarbeitenden) bei Bedarf bei Supabase
    anmeldet: `TIER_SERVICE_PASSWORD_ADMIN`, `TIER_SERVICE_PASSWORD_SCHICHTLEITUNG`
    (Passwörter der beiden bestehenden Konten), `TIER_SERVICE_PASSWORD_MITARBEITER`
    (Passwort des neuen dritten Kontos).
-6. Backend neu starten (`start_app.bat`).
+7. Backend neu starten (`start_app.bat`).
 
 Ohne diese Einrichtung funktionieren die Sammel-Logins unverändert weiter;
 Einzel-Logins beantworten den Login-Versuch dann mit „Service-Konten
@@ -221,8 +226,9 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
   Erkennung von Zeiten die mehr als 1 Std. vom Rest der eigenen Dienstart
   abweichen). Rufbereitschaft (Dienst "R") und Kranke zählen nicht als "im
   Dienst" mit. Einzelne Mitarbeitende können per Button aus der
-  Gesamtrechnung ausgeschlossen bzw. wieder einbezogen werden (rein
-  clientseitig, pro angezeigtem Tag). Excel-Export eines Tages
+  Gesamtrechnung ausgeschlossen bzw. wieder einbezogen werden (serverseitig
+  gespeichert je Dienstplan-Eintrag, bleibt also auch nach einem Neuladen
+  der Webseite erhalten, ab Rolle Schichtleitung). Excel-Export eines Tages
   (`/api/dienstplan/export`), **1:1 im Format der echten
   Tagesdienstplan-Vorlage** (Zellen, Rahmen, Schriftarten, Farben,
   Zahlenformate - gegen eine echte Datei abgeglichen, siehe
@@ -231,6 +237,31 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
   `Backups\Tagesdienstpläne\<Datum>\<Datum>_<Uhrzeit>.xlsx` gespeichert
   (Verlauf, kein Ersetzen vorheriger Stände). Namens-Autovervollständigung
   aus den Mitarbeiter-Stammdaten im Krankmeldungs-Formular
+- Dienstplan-Import: jeder importierte Name wird automatisch den
+  Mitarbeiter-Stammdaten zugeordnet (exakter Treffer, erkannter
+  Vor-/Nachname-Dreher oder eindeutiger Tippfehler-Treffer, siehe
+  `backend/app/mitarbeiter_matching.py`). Nicht zuordenbare oder nur
+  unsicher zugeordnete Namen werden im Importergebnis gesondert
+  aufgeführt (zur manuellen Prüfung), blockieren den Import aber nicht.
+- Krank-Status im Dienstplan entfernen: Wird eine Person im Dienstplan
+  wieder auf "nicht krank" gesetzt, wird vorher gefragt, ob die passende
+  laufende Krankmeldung ebenfalls gelöscht werden soll (siehe
+  `routers/dienstplan.py`, Feld `auch_krankmeldung_loeschen`)
+- **Mitarbeiter-Historie**: je Mitarbeiter:in wird nachvollziehbar
+  protokolliert, wie oft/wann krank gemeldet wurde (inkl. Kranktage
+  gesamt), wann Krankmeldungen storniert/gelöscht wurden und wann sich die
+  Stammdaten geändert haben (`/api/mitarbeiter/{id}/historie`, siehe
+  `backend/app/mitarbeiter_historie.py`). Sichtbar über den Button
+  "Verlauf" in der Mitarbeiter-Stammdaten-Tabelle (Webapp, ab
+  Schichtleitung) sowie im Verwaltungstool.
+- **Benutzerprotokoll** (Logfile je Account): protokolliert für jedes
+  Benutzerkonto An-/Abmeldungen sowie Anlegen/Bearbeiten/Löschen über alle
+  Module hinweg (Krankmeldungen, Mitarbeiter-Stammdaten, Benutzerkonten,
+  Dienstplan, Meldungen), siehe `backend/app/aktivitaet.py` und
+  `/api/audit/benutzerprotokoll` (nur Admin).
+- Beide Protokolle (Mitarbeiter-Historie und Benutzerprotokoll) lassen
+  sich im **Verwaltungstool** als Excel-Datei exportieren (Reiter
+  "Historie & Protokolle").
 - Dienstplan-Krank-Popup: Wird ein Eintrag im Dienstplan auf "Krank"
   gesetzt (manuell oder durch einen Excel-Import erkannt), erscheint ein
   Popup zum direkten Anlegen der passenden Krankmeldung (vorausgefüllt mit
@@ -283,7 +314,9 @@ bereits laufen, das Tool spricht dieselbe `/api/...`-Schnittstelle an
 (eigener Login, nur für die Rolle Admin).
 
 Funktionen:
-- **Mitarbeiter-Stammdaten**: anlegen, bearbeiten, löschen.
+- **Mitarbeiter-Stammdaten**: anlegen, bearbeiten, löschen, sowie je
+  Mitarbeiter:in den Verlauf anzeigen (Button "Verlauf anzeigen": wie
+  oft/wann krank, Stammdaten-Änderungen).
 - **Stammdaten-Import**: durchsucht einen Ordner mit echten Tagesdienstplan-
   Excel-Dateien (z. B. `04_Tagesdienstpläne`) rekursiv nach Vor-/Nachnamen
   (Unterordner `03_Krankmeldungen` wird ausgeschlossen) und legt daraus
@@ -296,8 +329,13 @@ Funktionen:
   bewusst nicht gelöscht, sondern über „Aktiv" deaktiviert, damit das
   Änderungsprotokoll nachvollziehbar bleibt.
 - **Dienstplan-Import**: Excel-Datei auswählen und importieren, inkl.
-  Rückmeldung zu Anzahl Einträgen, Krank-Meldungen, Bulli-Fahrer:innen
-  und unbekannten Dienstkürzeln.
+  Rückmeldung zu Anzahl Einträgen, Krank-Meldungen, Bulli-Fahrer:innen,
+  unbekannten Dienstkürzeln sowie nicht oder nur unsicher den
+  Mitarbeiter-Stammdaten zugeordneten Namen.
+- **Historie & Protokolle**: Export der kompletten Mitarbeiter-Historie
+  (alle Mitarbeitenden) sowie des Benutzerprotokolls (optional gefiltert
+  nach Benutzername) als Excel-Datei; das Benutzerprotokoll lässt sich
+  zusätzlich direkt in einer Tabelle einsehen.
 - **Datenhaltung**: zeigt den aktuellen Modus (Lokal/Supabase) an,
   erlaubt das Umschalten (schreibt `backend\.env`) und den einmaligen
   Import vorhandener Supabase-Daten (Krankmeldungen + Änderungsprotokoll)
@@ -311,9 +349,14 @@ Funktionen:
 ## 6. Datenschutz (unverändert wichtig)
 
 - Krankmeldungen enthalten besonders schützenswerte Gesundheitsdaten.
-- Gemeinsame Logins verhindern individuelle Nachvollziehbarkeit beim
-  Anlegen/Bearbeiten – das Änderungsprotokoll dokumentiert zumindest
-  die Rolle (Admin/Disposition) und den Zeitpunkt jeder Änderung.
+- Bei den weiterhin bestehenden gemeinsamen Sammel-Logins (ADMIN/DRKFKB)
+  dokumentiert das Änderungsprotokoll nur die Rolle und den Zeitpunkt,
+  keine individuelle Person. Bei Einzel-Logins je Mitarbeiter:in wird
+  zusätzlich der jeweilige Benutzername protokolliert (Dienstplan-
+  Änderungsprotokoll, Mitarbeiter-Historie, Benutzerprotokoll) - das
+  Benutzerprotokoll zeichnet dabei An-/Abmeldungen sowie
+  Anlegen/Bearbeiten/Löschen je Account auf und sollte daher nur
+  berechtigten Admin-Personen zugänglich sein.
 - Keine Diagnosen in Bemerkungen erfassen.
 - Standardpasswörter vor Produktivbetrieb ändern (`backend\.env`).
 - Sicherungsordner (`Backups\Supabase`) und die Datenbankdatei

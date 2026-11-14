@@ -22,6 +22,8 @@ MITARBEITER_TABLE = "mitarbeiter"
 DIENSTPLAN_TABLE = "dienstplan"
 DIENSTPLAN_AUDIT_TABLE = "dienstplan_audit"
 MELDUNGEN_TABLE = "meldungen"
+MITARBEITER_EREIGNIS_TABLE = "mitarbeiter_ereignis"
+BENUTZER_AKTIVITAET_TABLE = "benutzer_aktivitaet"
 
 _TIMEOUT = 30
 

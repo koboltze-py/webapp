@@ -25,7 +25,9 @@ from . import supabase_client as sb
 from .config import settings
 from .database import SessionLocal
 from .deps import session_tier
-from .models import AuditLog, SickReport
+from .mitarbeiter_historie import record_ereignis
+from .mitarbeiter_matching import ordne_mitarbeiter_zu, zu_dienstplan_format
+from .models import AuditLog, Mitarbeiter, SickReport
 
 REPORT_FIELDS = (
     "reported_at",
@@ -99,6 +101,30 @@ class SqliteReportsRepository:
         self.db.add(entry)
         self.db.commit()
 
+    def _resolve_mitarbeiter(self, employee_name: str) -> Optional[Mitarbeiter]:
+        """Ordnet den Krankmeldungs-Namen ('Nachname, Vorname') einem
+        Stammdatensatz zu (siehe mitarbeiter_matching.py), für die
+        Mitarbeiter-Historie."""
+        ergebnis = ordne_mitarbeiter_zu(employee_name, self.db.query(Mitarbeiter).all())
+        return ergebnis.mitarbeiter if ergebnis else None
+
+    def _record_historie(
+        self, *, employee_name: str, ereignis_typ: str, beschreibung: str,
+        report_id, actor_role: str, actor_username: str, details: Optional[dict] = None,
+    ) -> None:
+        mitarbeiter = self._resolve_mitarbeiter(employee_name)
+        record_ereignis(
+            mitarbeiter_id=mitarbeiter.id if mitarbeiter else None,
+            mitarbeiter_name=zu_dienstplan_format(employee_name),
+            ereignis_typ=ereignis_typ,
+            beschreibung=beschreibung,
+            bezug_typ="sick_report",
+            bezug_id=report_id,
+            actor_username=actor_username,
+            actor_role=actor_role,
+            details=details,
+        )
+
     def list_reports(self) -> list[SickReport]:
         return (
             self.db.query(SickReport)
@@ -106,7 +132,7 @@ class SqliteReportsRepository:
             .all()
         )
 
-    def create_report(self, data: dict[str, Any], role: str) -> SickReport:
+    def create_report(self, data: dict[str, Any], role: str, actor_username: str = "") -> SickReport:
         _validate_dates(data["sick_from"], data["sick_to"])
         if role != "admin":
             data["careman_done"] = False
@@ -117,9 +143,15 @@ class SqliteReportsRepository:
         self.db.refresh(report)
 
         self._write_audit(action="INSERT", report_id=report.id, old_data=None, new_data=_snapshot_orm(report), actor_role=role)
+        self._record_historie(
+            employee_name=report.employee, ereignis_typ="krank_gemeldet",
+            beschreibung=f"Krank gemeldet: {report.sick_from.isoformat()} bis {report.sick_to.isoformat()}",
+            report_id=report.id, actor_role=role, actor_username=actor_username,
+            details={"sick_from": report.sick_from.isoformat(), "sick_to": report.sick_to.isoformat()},
+        )
         return report
 
-    def update_report(self, report_id, data: dict[str, Any], role: str) -> SickReport:
+    def update_report(self, report_id, data: dict[str, Any], role: str, actor_username: str = "") -> SickReport:
         report = self.db.get(SickReport, self._coerce_id(report_id))
         if not report:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
@@ -138,6 +170,12 @@ class SqliteReportsRepository:
         self.db.refresh(report)
 
         self._write_audit(action="UPDATE", report_id=report.id, old_data=old_data, new_data=_snapshot_orm(report), actor_role=role)
+        if old_data.get("sick_from") != report.sick_from.isoformat() or old_data.get("sick_to") != report.sick_to.isoformat():
+            self._record_historie(
+                employee_name=report.employee, ereignis_typ="krankmeldung_aktualisiert",
+                beschreibung=f"Zeitraum geändert: {report.sick_from.isoformat()} bis {report.sick_to.isoformat()}",
+                report_id=report.id, actor_role=role, actor_username=actor_username,
+            )
         return report
 
     def toggle_careman(self, report_id, careman_done: bool, role: str) -> SickReport:
@@ -154,16 +192,22 @@ class SqliteReportsRepository:
         self._write_audit(action="UPDATE", report_id=report.id, old_data=old_data, new_data=_snapshot_orm(report), actor_role=role)
         return report
 
-    def delete_report(self, report_id, role: str) -> None:
+    def delete_report(self, report_id, role: str, actor_username: str = "") -> None:
         report = self.db.get(SickReport, self._coerce_id(report_id))
         if not report:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
 
         old_data = _snapshot_orm(report)
+        report_id_wert, employee_name = report.id, report.employee
         self.db.delete(report)
         self.db.commit()
 
-        self._write_audit(action="DELETE", report_id=report.id, old_data=old_data, new_data=None, actor_role=role)
+        self._write_audit(action="DELETE", report_id=report_id_wert, old_data=old_data, new_data=None, actor_role=role)
+        self._record_historie(
+            employee_name=employee_name, ereignis_typ="krankmeldung_geloescht",
+            beschreibung=f"Krankmeldung gelöscht (war krank: {old_data.get('sick_from')} bis {old_data.get('sick_to')})",
+            report_id=report_id_wert, actor_role=role, actor_username=actor_username,
+        )
 
     def list_audit(self) -> list[AuditLog]:
         return (
@@ -216,16 +260,46 @@ class SupabaseReportsRepository:
             # Supabase-Sicherung\sql\sick_report_audit.sql).
             print(f"[WARN] Änderungsprotokoll konnte nicht geschrieben werden: {exc}")
 
+    def _resolve_mitarbeiter_id(self, employee_name: str) -> Optional[Any]:
+        try:
+            mitarbeiter_liste = self._call(sb.list_rows, sb.MITARBEITER_TABLE, order="nachname.asc")
+        except sb.SupabaseError:
+            return None
+        ergebnis = ordne_mitarbeiter_zu(employee_name, mitarbeiter_liste)
+        return ergebnis.mitarbeiter.get("id") if ergebnis else None
+
+    def _record_historie(
+        self, *, employee_name: str, ereignis_typ: str, beschreibung: str,
+        report_id, actor_role: str, actor_username: str, details: Optional[dict] = None,
+    ) -> None:
+        record_ereignis(
+            mitarbeiter_id=self._resolve_mitarbeiter_id(employee_name),
+            mitarbeiter_name=zu_dienstplan_format(employee_name),
+            ereignis_typ=ereignis_typ,
+            beschreibung=beschreibung,
+            bezug_typ="sick_report",
+            bezug_id=report_id,
+            actor_username=actor_username,
+            actor_role=actor_role,
+            details=details,
+        )
+
     def list_reports(self) -> list[dict[str, Any]]:
         return self._call(sb.list_rows, sb.REPORTS_TABLE, order="reported_at.desc,created_at.desc")
 
-    def create_report(self, data: dict[str, Any], role: str) -> dict[str, Any]:
+    def create_report(self, data: dict[str, Any], role: str, actor_username: str = "") -> dict[str, Any]:
         _validate_dates(data["sick_from"], data["sick_to"])
         if role != "admin":
             data["careman_done"] = False
 
         row = self._call(sb.insert_row, sb.REPORTS_TABLE, data)
         self._write_audit(action="INSERT", report_id=row["id"], old_data=None, new_data=_snapshot_dict(row), actor_role=role)
+        self._record_historie(
+            employee_name=row["employee"], ereignis_typ="krank_gemeldet",
+            beschreibung=f"Krank gemeldet: {row.get('sick_from')} bis {row.get('sick_to')}",
+            report_id=row["id"], actor_role=role, actor_username=actor_username,
+            details={"sick_from": row.get("sick_from"), "sick_to": row.get("sick_to")},
+        )
         return row
 
     def _get_report(self, report_id: str) -> dict[str, Any]:
@@ -234,7 +308,7 @@ class SupabaseReportsRepository:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
         return row
 
-    def update_report(self, report_id: str, data: dict[str, Any], role: str) -> dict[str, Any]:
+    def update_report(self, report_id: str, data: dict[str, Any], role: str, actor_username: str = "") -> dict[str, Any]:
         old_row = self._get_report(report_id)
         _validate_dates(data["sick_from"], data["sick_to"])
         old_data = _snapshot_dict(old_row)
@@ -248,6 +322,12 @@ class SupabaseReportsRepository:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
 
         self._write_audit(action="UPDATE", report_id=report_id, old_data=old_data, new_data=_snapshot_dict(new_row), actor_role=role)
+        if old_data.get("sick_from") != _snapshot_dict(new_row).get("sick_from") or old_data.get("sick_to") != _snapshot_dict(new_row).get("sick_to"):
+            self._record_historie(
+                employee_name=new_row["employee"], ereignis_typ="krankmeldung_aktualisiert",
+                beschreibung=f"Zeitraum geändert: {new_row.get('sick_from')} bis {new_row.get('sick_to')}",
+                report_id=report_id, actor_role=role, actor_username=actor_username,
+            )
         return new_row
 
     def toggle_careman(self, report_id: str, careman_done: bool, role: str) -> dict[str, Any]:
@@ -266,7 +346,7 @@ class SupabaseReportsRepository:
         self._write_audit(action="UPDATE", report_id=report_id, old_data=old_data, new_data=_snapshot_dict(new_row), actor_role=role)
         return new_row
 
-    def delete_report(self, report_id: str, role: str) -> None:
+    def delete_report(self, report_id: str, role: str, actor_username: str = "") -> None:
         old_row = self._get_report(report_id)
         old_data = _snapshot_dict(old_row)
 
@@ -274,6 +354,11 @@ class SupabaseReportsRepository:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Krankmeldung nicht gefunden.")
 
         self._write_audit(action="DELETE", report_id=report_id, old_data=old_data, new_data=None, actor_role=role)
+        self._record_historie(
+            employee_name=old_row["employee"], ereignis_typ="krankmeldung_geloescht",
+            beschreibung=f"Krankmeldung gelöscht (war krank: {old_data.get('sick_from')} bis {old_data.get('sick_to')})",
+            report_id=report_id, actor_role=role, actor_username=actor_username,
+        )
 
     def list_audit(self) -> list[dict[str, Any]]:
         try:

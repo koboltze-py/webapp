@@ -133,11 +133,15 @@ class DienstplanEintragOut(BaseModel):
     id: Union[int, str]
     datum: date
     mitarbeiter_name: str
+    mitarbeiter_id: Optional[Union[int, str]] = None
     dienst_kategorie: Optional[str] = None
     start_zeit: Optional[str] = None
     end_zeit: Optional[str] = None
     ist_krank: bool = False
     ist_bulmorfahrer: bool = False
+    # Manuell aus der Tag/Nacht/Dispo-Gesamtrechnung herausgenommen, siehe
+    # models.py:DienstplanEintrag.ausgeschlossen.
+    ausgeschlossen: bool = False
     notiz: str = ""
     quelle_datei: str = ""
     created_at: datetime
@@ -156,9 +160,15 @@ class DienstplanEintragOut(BaseModel):
 class DienstplanEintragUpdate(BaseModel):
     ist_krank: Optional[bool] = None
     ist_bulmorfahrer: Optional[bool] = None
+    ausgeschlossen: Optional[bool] = None
     start_zeit: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     end_zeit: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     notiz: Optional[str] = Field(None, max_length=500)
+    # Nur relevant, wenn ist_krank von true auf false wechselt: löscht dann
+    # zusätzlich die passende(n) laufende(n) Krankmeldung(en) dieser Person
+    # für diesen Tag (siehe routers/dienstplan.py). Fließt NICHT in die
+    # eigentliche Dienstplan-Aktualisierung ein (exclude_unset/exclude_none).
+    auch_krankmeldung_loeschen: Optional[bool] = None
 
 
 class DienstplanQuelle(BaseModel):
@@ -190,6 +200,14 @@ class KrankOhneMeldung(BaseModel):
     datum: date
 
 
+class UnsichereZuordnung(BaseModel):
+    """Dienstplan-Name, der beim Import nur unscharf (Tippfehler/Dreher)
+    oder gar nicht eindeutig einem Stammdatensatz zugeordnet werden konnte
+    (siehe mitarbeiter_matching.py) - zur manuellen Prüfung."""
+    mitarbeiter_name: str
+    vorschlag: Optional[str] = None  # Name des unsicher erkannten Treffers, falls vorhanden
+
+
 class DienstplanImportResult(BaseModel):
     success: bool
     datum: Optional[date] = None
@@ -198,6 +216,8 @@ class DienstplanImportResult(BaseModel):
     anzahl_bulmorfahrer: int = 0
     unbekannte_dienste: list[str] = []
     krank_ohne_meldung: list[KrankOhneMeldung] = []
+    nicht_zugeordnete_mitarbeiter: list[str] = []
+    unsichere_zuordnungen: list[UnsichereZuordnung] = []
     error: Optional[str] = None
 
 
@@ -225,3 +245,53 @@ class MeldungOut(MeldungBase):
     autor: str
     created_at: datetime
     updated_at: datetime
+
+
+# --- Mitarbeiter-Historie ----------------------------------------------------
+
+
+class MitarbeiterEreignisOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: Union[int, str]
+    event_at: datetime
+    mitarbeiter_id: Optional[Union[int, str]] = None
+    mitarbeiter_name: str = ""
+    ereignis_typ: str
+    beschreibung: str = ""
+    bezug_typ: Optional[str] = None
+    bezug_id: Optional[str] = None
+    actor_username: str = ""
+    actor_role: str = ""
+    details: Optional[dict] = None
+
+
+class MitarbeiterHistorieOut(BaseModel):
+    """Historie eines einzelnen Mitarbeiters: Chronologie + verdichtete
+    Kennzahlen (siehe routers/mitarbeiter.py:get_mitarbeiter_historie)."""
+
+    mitarbeiter_id: Union[int, str]
+    anzahl_krankmeldungen: int = 0
+    anzahl_krank_tage_gesamt: int = 0
+    letzte_krankmeldung_von: Optional[date] = None
+    letzte_krankmeldung_bis: Optional[date] = None
+    ereignisse: list[MitarbeiterEreignisOut] = []
+
+
+# --- Benutzer-Aktivitätsprotokoll (Logfile je Account) ----------------------
+
+
+class BenutzerAktivitaetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: Union[int, str]
+    event_at: datetime
+    username: str = ""
+    rolle: str = ""
+    aktion: str
+    bereich: str = ""
+    entity_typ: Optional[str] = None
+    entity_id: Optional[str] = None
+    entity_bezeichnung: str = ""
+    beschreibung: str = ""
+    details: Optional[dict] = None

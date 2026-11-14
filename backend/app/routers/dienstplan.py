@@ -1,6 +1,8 @@
 """Dienstplan: Anzeige + Excel-Import (siehe app/dienstplan_parser.py) +
 Sortierung/Kategorisierung (siehe app/dienstplan_sortierung.py) + manuelle
-Korrekturen mit Änderungsprotokoll."""
+Korrekturen mit Änderungsprotokoll. Beim Import wird jeder Name zusätzlich
+den Personal-Stammdaten zugeordnet (siehe mitarbeiter_matching.py) -
+Grundlage für die Mitarbeiter-Historie (mitarbeiter_historie.py)."""
 from __future__ import annotations
 
 import tempfile
@@ -11,11 +13,14 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response
 
+from ..aktivitaet import record_activity
 from ..deps import get_current_role, require_admin, require_schichtleitung
 from ..dienstplan_export import export_dienstplan_excel
 from ..dienstplan_parser import parse_dienstplan_excel
 from ..dienstplan_sortierung import kategorisiere_und_sortiere
-from ..modules_repository import get_dienstplan_repository
+from ..mitarbeiter_historie import record_ereignis
+from ..mitarbeiter_matching import ordne_mitarbeiter_zu
+from ..modules_repository import get_dienstplan_repository, get_mitarbeiter_repository
 from ..repository import ReportsRepository, get_reports_repository
 from ..schemas import (
     DienstplanAuditOut,
@@ -23,6 +28,7 @@ from ..schemas import (
     DienstplanEintragUpdate,
     DienstplanImportResult,
     DienstplanQuelle,
+    UnsichereZuordnung,
 )
 
 router = APIRouter(prefix="/api/dienstplan", tags=["dienstplan"])
@@ -54,6 +60,16 @@ def _employee_zu_dienstplan_name(employee: str) -> str:
         nachname, _, vorname = employee.partition(",")
         return f"{vorname.strip()} {nachname.strip()}".strip()
     return employee.strip()
+
+
+def _dienstplan_name_zu_employee(mitarbeiter_name: str) -> str:
+    """Kehrt obige Konvertierung um ('Vorname Nachname' -> 'Nachname,
+    Vorname'), für den Abgleich mit Krankmeldungen beim Entfernen des
+    Krank-Status (siehe update_dienstplan_eintrag)."""
+    teile = (mitarbeiter_name or "").strip().split(" ", 1)
+    if len(teile) == 2:
+        return f"{teile[1]}, {teile[0]}"
+    return mitarbeiter_name or ""
 
 
 def _virtuelle_krank_eintraege(
@@ -127,9 +143,10 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         return dict(row)
     return {
         "id": row.id, "datum": row.datum, "mitarbeiter_name": row.mitarbeiter_name,
+        "mitarbeiter_id": row.mitarbeiter_id,
         "dienst_kategorie": row.dienst_kategorie, "start_zeit": row.start_zeit, "end_zeit": row.end_zeit,
-        "ist_krank": row.ist_krank, "ist_bulmorfahrer": row.ist_bulmorfahrer, "notiz": row.notiz,
-        "quelle_datei": row.quelle_datei, "created_at": row.created_at,
+        "ist_krank": row.ist_krank, "ist_bulmorfahrer": row.ist_bulmorfahrer, "ausgeschlossen": row.ausgeschlossen,
+        "notiz": row.notiz, "quelle_datei": row.quelle_datei, "created_at": row.created_at,
     }
 
 
@@ -226,13 +243,49 @@ def update_dienstplan_eintrag(
     reports_repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(require_schichtleitung),
 ):
-    data = payload.model_dump(exclude_unset=True, exclude_none=True)
+    auch_krankmeldung_loeschen = bool(payload.auch_krankmeldung_loeschen)
+    data = payload.model_dump(exclude_unset=True, exclude_none=True, exclude={"auch_krankmeldung_loeschen"})
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Keine Änderungen übermittelt.")
     actor_username = request.session.get("username", role)
+
+    vorher = _row_to_dict(repo.get_eintrag(eintrag_id))
+    war_krank = bool(vorher.get("ist_krank"))
+
     row = repo.update_eintrag(eintrag_id, data, role, actor_username)
     ergebnis = kategorisiere_und_sortiere([_row_to_dict(row)])[0]
     _sichere_tagesdienstplan_snapshot(ergebnis["datum"], repo, reports_repo, actor_username)
+
+    # Krank-Status wurde gerade entfernt (true -> false): optional die
+    # passende(n) laufende(n) Krankmeldung(en) dieser Person mit löschen
+    # (Nutzer wurde im Frontend vorher gefragt, siehe index.html). Sonst nur
+    # zur Nachvollziehbarkeit in der Mitarbeiter-Historie vermerken.
+    if war_krank and data.get("ist_krank") is False:
+        if auch_krankmeldung_loeschen:
+            employee_name = _dienstplan_name_zu_employee(ergebnis["mitarbeiter_name"]).strip().casefold()
+            alle_reports = [_row_to_report_dict(r) for r in reports_repo.list_reports()]
+            passende = [
+                r for r in alle_reports
+                if r["employee"].strip().casefold() == employee_name
+                and r["sick_from"] <= ergebnis["datum"] <= r["sick_to"]
+            ]
+            for r in passende:
+                reports_repo.delete_report(r["id"], role, actor_username)
+        else:
+            record_ereignis(
+                mitarbeiter_id=ergebnis.get("mitarbeiter_id"),
+                mitarbeiter_name=ergebnis["mitarbeiter_name"],
+                ereignis_typ="dienstplan_krank_aufgehoben",
+                beschreibung=f"Krank-Status im Dienstplan vom {ergebnis['datum']} aufgehoben (Krankmeldung bewusst nicht gelöscht).",
+                bezug_typ="dienstplan", bezug_id=eintrag_id,
+                actor_username=actor_username, actor_role=role,
+            )
+
+    record_activity(
+        request, aktion="UPDATE", bereich="Dienstplan",
+        entity_typ="dienstplan", entity_id=eintrag_id, entity_bezeichnung=ergebnis["mitarbeiter_name"],
+        beschreibung=f"Dienstplan-Eintrag von '{ergebnis['mitarbeiter_name']}' am {ergebnis['datum']} bearbeitet.",
+    )
     return ergebnis
 
 
@@ -242,6 +295,7 @@ async def import_dienstplan(
     request: Request,
     repo=Depends(get_dienstplan_repository),
     reports_repo: ReportsRepository = Depends(get_reports_repository),
+    mitarbeiter_repo=Depends(get_mitarbeiter_repository),
     role: str = Depends(require_schichtleitung),
 ):
     if not datei.filename or not datei.filename.lower().endswith((".xlsx", ".xlsm")):
@@ -260,21 +314,39 @@ async def import_dienstplan(
         return DienstplanImportResult(success=False, error=ergebnis["error"])
 
     tag = ergebnis["datum"] or date.today()
-    eintraege = [
-        {
+    mitarbeiter_liste = mitarbeiter_repo.list_mitarbeiter()
+    nicht_zugeordnet: list[str] = []
+    unsicher: list[UnsichereZuordnung] = []
+    eintraege = []
+    for e in ergebnis["eintraege"]:
+        treffer = ordne_mitarbeiter_zu(e["mitarbeiter_name"], mitarbeiter_liste)
+        if treffer is None:
+            nicht_zugeordnet.append(e["mitarbeiter_name"])
+            mitarbeiter_id = None
+        else:
+            mitarbeiter_id = treffer.mitarbeiter.id if not isinstance(treffer.mitarbeiter, dict) else treffer.mitarbeiter["id"]
+            if treffer.fuzzy:
+                vorname = treffer.mitarbeiter["vorname"] if isinstance(treffer.mitarbeiter, dict) else treffer.mitarbeiter.vorname
+                nachname = treffer.mitarbeiter["nachname"] if isinstance(treffer.mitarbeiter, dict) else treffer.mitarbeiter.nachname
+                unsicher.append(UnsichereZuordnung(mitarbeiter_name=e["mitarbeiter_name"], vorschlag=f"{vorname} {nachname}"))
+        eintraege.append({
             "mitarbeiter_name": e["mitarbeiter_name"],
+            "mitarbeiter_id": mitarbeiter_id,
             "dienst_kategorie": e["dienst_kategorie"],
             "start_zeit": e["start_zeit"],
             "end_zeit": e["end_zeit"],
             "ist_krank": e["ist_krank"],
             "ist_bulmorfahrer": e["ist_bulmorfahrer"],
             "notiz": e["notiz"],
-        }
-        for e in ergebnis["eintraege"]
-    ]
+        })
     repo.replace_tag(tag, eintraege, datei.filename)
     actor_username = request.session.get("username", role)
     _sichere_tagesdienstplan_snapshot(tag, repo, reports_repo, actor_username)
+    record_activity(
+        request, aktion="IMPORT", bereich="Dienstplan",
+        entity_typ="dienstplan", entity_bezeichnung=datei.filename,
+        beschreibung=f"Dienstplan für {tag} aus '{datei.filename}' importiert ({len(eintraege)} Einträge, {len(nicht_zugeordnet)} nicht zugeordnet).",
+    )
 
     return DienstplanImportResult(
         success=True,
@@ -284,5 +356,7 @@ async def import_dienstplan(
         anzahl_bulmorfahrer=sum(1 for e in eintraege if e["ist_bulmorfahrer"]),
         unbekannte_dienste=ergebnis["unbekannte_dienste"],
         krank_ohne_meldung=_krank_ohne_meldung(eintraege, tag, reports_repo),
+        nicht_zugeordnete_mitarbeiter=nicht_zugeordnet,
+        unsichere_zuordnungen=unsicher,
     )
 

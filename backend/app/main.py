@@ -13,11 +13,12 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
-from .database import Base, engine
+from .database import Base, engine, run_startup_migrations
 from .routers import audit, auth, benutzer, dienstplan, meldungen, mitarbeiter, reports, wandanzeige
 
 if not settings.supabase_enabled:
     Base.metadata.create_all(bind=engine)
+    run_startup_migrations()
 
 app = FastAPI(title="DRK FKB Krankmeldungen", docs_url="/api/docs", redoc_url=None)
 

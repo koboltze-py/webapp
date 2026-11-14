@@ -21,6 +21,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from .. import supabase_client as sb
+from ..aktivitaet import record_activity
 from ..config import settings
 from ..deps import TIER_ROLES
 from ..modules_repository import get_benutzer_repository
@@ -57,6 +58,7 @@ def login(
             try:
                 tokens = sb.sign_in(email, payload.password)
             except sb.SupabaseError:
+                record_activity(request, aktion="LOGIN_FEHLGESCHLAGEN", bereich="Anmeldung", username=username, rolle="", beschreibung="Falsches Passwort oder unbekannter Benutzer.")
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Benutzername oder Passwort falsch.")
             # Token landet im geteilten Rollenstufen-Zwischenspeicher statt in
             # der Session - so profitieren auch Einzel-Logins derselben
@@ -65,15 +67,18 @@ def login(
         else:
             expected_password = settings.admin_password if legacy_role == "admin" else settings.disposition_password
             if not expected_password or not secrets.compare_digest(payload.password, expected_password):
+                record_activity(request, aktion="LOGIN_FEHLGESCHLAGEN", bereich="Anmeldung", username=username, rolle="", beschreibung="Falsches Passwort oder unbekannter Benutzer.")
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Benutzername oder Passwort falsch.")
 
         request.session["role"] = legacy_role
         request.session["username"] = username.upper()
+        record_activity(request, aktion="LOGIN", bereich="Anmeldung", beschreibung="Anmeldung erfolgreich (Sammel-Login).")
         return LoginResponse(role=legacy_role, username=username.upper(), anzeigename=username.upper())
 
     # Weg 2: Einzel-Login über die Benutzertabelle.
     benutzer = benutzer_repo.get_by_username(username)
     if not benutzer:
+        record_activity(request, aktion="LOGIN_FEHLGESCHLAGEN", bereich="Anmeldung", username=username, rolle="", beschreibung="Falsches Passwort oder unbekannter Benutzer.")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Benutzername oder Passwort falsch.")
 
     password_hash = benutzer["password_hash"] if isinstance(benutzer, dict) else benutzer.password_hash
@@ -82,6 +87,7 @@ def login(
     anzeigename = benutzer["anzeigename"] if isinstance(benutzer, dict) else benutzer.anzeigename
 
     if not aktiv or not verify_password(payload.password, password_hash) or rolle not in TIER_ROLES:
+        record_activity(request, aktion="LOGIN_FEHLGESCHLAGEN", bereich="Anmeldung", username=username, rolle="", beschreibung="Falsches Passwort, inaktiver Account oder unbekannte Rolle.")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Benutzername oder Passwort falsch.")
 
     if settings.supabase_enabled and not settings.individual_login_enabled:
@@ -97,11 +103,13 @@ def login(
 
     request.session["role"] = rolle
     request.session["username"] = username
+    record_activity(request, aktion="LOGIN", bereich="Anmeldung", beschreibung="Anmeldung erfolgreich.")
     return LoginResponse(role=rolle, username=username, anzeigename=anzeigename or username)
 
 
 @router.post("/logout")
 def logout(request: Request):
+    record_activity(request, aktion="LOGOUT", bereich="Anmeldung", beschreibung="Abmeldung.")
     request.session.clear()
     return {"ok": True}
 
