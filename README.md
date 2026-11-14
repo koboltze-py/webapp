@@ -22,7 +22,11 @@ Webapp mit Fastapi/
 │   ├── backup_gui.py
 │   └── config.json
 ├── Backups/
-│   └── Supabase/              Zielordner der Sicherungen (ein Unterordner je Lauf)
+│   ├── Supabase/               Zielordner der Supabase-Sicherungen (ein Unterordner je Lauf)
+│   ├── App/                    Vollstaendige Software-Backups (manuell erstellt)
+│   ├── Mds/                     Technische Dokumentation als Backup-Snapshot
+│   └── Tagesdienstpläne/        Automatische Dienstplan-Excel-Schnappschuesse
+│                                 (bei jedem Import/jeder Aenderung, siehe LIESMICH.txt)
 ├── Verwaltungstool/            Desktop-GUI fuer Mitarbeiter/Benutzer/Dienstplan-Import
 │   ├── gui.py
 │   └── requirements.txt
@@ -219,9 +223,14 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
   Dienst" mit. Einzelne Mitarbeitende können per Button aus der
   Gesamtrechnung ausgeschlossen bzw. wieder einbezogen werden (rein
   clientseitig, pro angezeigtem Tag). Excel-Export eines Tages
-  (`/api/dienstplan/export`, angelehnt an die Original-Vorlage), Namens-
-  Autovervollständigung aus den Mitarbeiter-Stammdaten im
-  Krankmeldungs-Formular
+  (`/api/dienstplan/export`), **1:1 im Format der echten
+  Tagesdienstplan-Vorlage** (Zellen, Rahmen, Schriftarten, Farben,
+  Zahlenformate - gegen eine echte Datei abgeglichen, siehe
+  `backend/app/dienstplan_export.py`). Bei jedem Excel-Import **und**
+  jeder manuellen Änderung wird automatisch ein solcher Export unter
+  `Backups\Tagesdienstpläne\<Datum>\<Datum>_<Uhrzeit>.xlsx` gespeichert
+  (Verlauf, kein Ersetzen vorheriger Stände). Namens-Autovervollständigung
+  aus den Mitarbeiter-Stammdaten im Krankmeldungs-Formular
 - Dienstplan-Krank-Popup: Wird ein Eintrag im Dienstplan auf "Krank"
   gesetzt (manuell oder durch einen Excel-Import erkannt), erscheint ein
   Popup zum direkten Anlegen der passenden Krankmeldung (vorausgefüllt mit
