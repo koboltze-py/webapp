@@ -213,7 +213,12 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
   manuelle Korrektur (Krank/Bulli-Fahrer/Zeiten/Notiz) mit eigenem
   Änderungsprotokoll (`/api/dienstplan/audit`, nur Admin)
 - Dienstplan: Zusammenfassung Tag/Nacht/Dispo-Mitarbeiter im Dienst (inkl.
-  Krank-Anzahl je Gruppe), Excel-Export eines Tages
+  Krank-Anzahl je Gruppe, Aufteilung nach Dienstart wie T/T10/T8/N/N10,
+  Erkennung von Zeiten die mehr als 1 Std. vom Rest der eigenen Dienstart
+  abweichen). Rufbereitschaft (Dienst "R") und Kranke zählen nicht als "im
+  Dienst" mit. Einzelne Mitarbeitende können per Button aus der
+  Gesamtrechnung ausgeschlossen bzw. wieder einbezogen werden (rein
+  clientseitig, pro angezeigtem Tag). Excel-Export eines Tages
   (`/api/dienstplan/export`, angelehnt an die Original-Vorlage), Namens-
   Autovervollständigung aus den Mitarbeiter-Stammdaten im
   Krankmeldungs-Formular
