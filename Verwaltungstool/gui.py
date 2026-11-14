@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import sys
 import threading
 import tkinter as tk
 from datetime import datetime
@@ -40,6 +41,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = PROJECT_ROOT / "backend" / ".env"
 LOCAL_DB_PATH = PROJECT_ROOT / "backend" / "data" / "krankmeldungen.db"
 SUPABASE_CONFIG_PATH = PROJECT_ROOT / "Supabase-Sicherung" / "config.json"
+# ".../03_Krankmeldungen/Webapp mit Fastapi" -> ".../04_Tagesdienstpläne"
+# (Standardpfad als Vorschlag in der Ordnerauswahl, siehe _build_stammdaten_import_tab).
+STANDARD_TAGESDIENSTPLAENE_ORDNER = PROJECT_ROOT.parent.parent / "04_Tagesdienstpläne"
+
+# Backend-Parser wiederverwenden (gleiche Erkennungslogik wie beim Dienstplan-
+# Import über die API) statt ihn zu duplizieren. app/__init__.py ist leer und
+# dienstplan_parser.py liest keine Konfiguration/DB, daher unbedenklich als
+# reiner Bibliotheks-Import.
+sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 
 class ApiError(RuntimeError):
@@ -459,6 +469,7 @@ class App(tk.Tk):
         notebook.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         self._build_mitarbeiter_tab(notebook)
+        self._build_stammdaten_import_tab(notebook)
         self._build_benutzer_tab(notebook)
         self._build_dienstplan_tab(notebook)
         self._build_datenhaltung_tab(notebook)
@@ -594,6 +605,164 @@ class App(tk.Tk):
                 self.after(0, lambda: messagebox.showerror("Löschen fehlgeschlagen", str(e)))
 
         threading.Thread(target=work, daemon=True).start()
+
+    # ---- Tab: Stammdaten-Import (aus echten Tagesdienstplan-Excel-Dateien) --
+    def _build_stammdaten_import_tab(self, notebook: ttk.Notebook):
+        tab = ttk.Frame(notebook, padding=10)
+        notebook.add(tab, text="Stammdaten-Import")
+
+        ttk.Label(
+            tab,
+            text="Durchsucht einen Ordner mit echten Tagesdienstplan-Excel-Dateien (.xlsx) rekursiv\n"
+            "nach Vor-/Nachnamen und legt daraus fehlende Mitarbeiter-Stammdaten an (Duplikate werden\n"
+            "übersprungen). Unterordner namens \"03_Krankmeldungen\" werden ausgeschlossen.",
+            justify="left", wraplength=800,
+        ).pack(anchor="w", pady=(0, 12))
+
+        folder_frame = ttk.Frame(tab)
+        folder_frame.pack(fill="x")
+        default_ordner = str(STANDARD_TAGESDIENSTPLAENE_ORDNER) if STANDARD_TAGESDIENSTPLAENE_ORDNER.exists() else ""
+        self.si_folder_var = tk.StringVar(value=default_ordner)
+        ttk.Entry(folder_frame, textvariable=self.si_folder_var, width=70).pack(side="left", fill="x", expand=True)
+        ttk.Button(folder_frame, text="Ordner auswählen …", command=self._choose_stammdaten_folder).pack(side="left", padx=(8, 0))
+
+        btns = ttk.Frame(tab)
+        btns.pack(anchor="w", pady=(10, 10))
+        self.si_scan_button = ttk.Button(btns, text="Scannen (Vorschau)", command=self._scan_stammdaten_ordner)
+        self.si_scan_button.pack(side="left")
+        self.si_create_button = ttk.Button(btns, text="Fehlende Mitarbeiter anlegen", command=self._create_stammdaten_aus_scan, state="disabled")
+        self.si_create_button.pack(side="left", padx=(6, 0))
+
+        ttk.Label(tab, text="Protokoll:").pack(anchor="w")
+        self.si_log = scrolledtext.ScrolledText(tab, height=16, state="disabled", wrap="word")
+        self.si_log.pack(fill="both", expand=True)
+
+        self._si_neue_namen: list[tuple[str, str]] = []
+
+    def _log_stammdaten(self, message: str):
+        self.si_log.configure(state="normal")
+        self.si_log.insert("end", message + "\n")
+        self.si_log.see("end")
+        self.si_log.configure(state="disabled")
+
+    def _choose_stammdaten_folder(self):
+        start = self.si_folder_var.get().strip() or str(PROJECT_ROOT)
+        path = filedialog.askdirectory(title="Ordner mit Tagesdienstplänen auswählen", initialdir=start)
+        if path:
+            self.si_folder_var.set(path)
+
+    def _scan_stammdaten_ordner(self):
+        ordner = self.si_folder_var.get().strip()
+        if not ordner or not Path(ordner).is_dir():
+            messagebox.showwarning("Ordner fehlt", "Bitte zuerst einen gültigen Ordner auswählen.")
+            return
+        self.si_scan_button.configure(state="disabled")
+        self.si_create_button.configure(state="disabled")
+        self.si_log.configure(state="normal")
+        self.si_log.delete("1.0", "end")
+        self.si_log.configure(state="disabled")
+        self._log_stammdaten(f"Scanne {ordner} …")
+
+        def work():
+            try:
+                try:
+                    from app.dienstplan_parser import parse_dienstplan_excel
+                except ImportError as e:
+                    self.after(0, lambda: self._on_stammdaten_scan_failed(
+                        f"Backend-Parser konnte nicht geladen werden (fehlt openpyxl? "
+                        f"'pip install -r requirements.txt' erneut ausführen): {e}"
+                    ))
+                    return
+
+                dateien = sorted(
+                    p for p in Path(ordner).rglob("*.xlsx")
+                    if "03_Krankmeldungen" not in p.parts and not p.name.startswith("~$")
+                )
+                gefundene_namen: dict[tuple[str, str], tuple[str, str]] = {}
+                fehler = 0
+                for i, datei in enumerate(dateien, start=1):
+                    try:
+                        ergebnis = parse_dienstplan_excel(datei)
+                    except Exception as exc:  # noqa: BLE001 - einzelne defekte Datei soll Scan nicht abbrechen
+                        ergebnis = {"success": False, "error": str(exc)}
+                    if not ergebnis.get("success"):
+                        fehler += 1
+                        continue
+                    for eintrag in ergebnis["eintraege"]:
+                        vorname, nachname = eintrag["vorname"], eintrag["nachname"]
+                        key = (vorname.strip().lower(), nachname.strip().lower())
+                        gefundene_namen.setdefault(key, (vorname.strip(), nachname.strip()))
+                    if i % 50 == 0 or i == len(dateien):
+                        anzahl_bisher = len(gefundene_namen)
+                        self.after(0, lambda i=i, n=len(dateien), a=anzahl_bisher: self._log_stammdaten(
+                            f"  … {i}/{n} Dateien gelesen ({a} einzigartige Namen bisher)"
+                        ))
+
+                try:
+                    vorhandene = self.api.list_mitarbeiter()
+                except (ApiError, requests.RequestException) as e:
+                    self.after(0, lambda: self._on_stammdaten_scan_failed(f"Bestehende Mitarbeiter konnten nicht geladen werden: {e}"))
+                    return
+                vorhandene_keys = {(m["vorname"].strip().lower(), m["nachname"].strip().lower()) for m in vorhandene}
+
+                neue = sorted(
+                    (v, n) for k, (v, n) in gefundene_namen.items() if k not in vorhandene_keys
+                )
+                self.after(0, lambda: self._on_stammdaten_scan_done(len(dateien), fehler, len(gefundene_namen), neue))
+            except Exception as e:  # noqa: BLE001 - soll als Fehlermeldung im GUI landen, nicht crashen
+                self.after(0, lambda: self._on_stammdaten_scan_failed(str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_stammdaten_scan_done(self, anzahl_dateien: int, fehler: int, anzahl_namen: int, neue: list[tuple[str, str]]):
+        self.si_scan_button.configure(state="normal")
+        self._si_neue_namen = neue
+        self._log_stammdaten(
+            f"\nFertig: {anzahl_dateien} Dateien gescannt ({fehler} nicht lesbar), "
+            f"{anzahl_namen} einzigartige Namen gefunden, davon {len(neue)} noch nicht in den Stammdaten."
+        )
+        if neue:
+            for vorname, nachname in neue:
+                self._log_stammdaten(f"  NEU: {vorname} {nachname}")
+            self.si_create_button.configure(state="normal")
+        else:
+            self._log_stammdaten("Keine neuen Mitarbeiter:innen - alle gefundenen Namen sind bereits angelegt.")
+
+    def _on_stammdaten_scan_failed(self, message: str):
+        self.si_scan_button.configure(state="normal")
+        self._log_stammdaten(f"FEHLER: {message}")
+        messagebox.showerror("Scan fehlgeschlagen", message)
+
+    def _create_stammdaten_aus_scan(self):
+        neue = list(self._si_neue_namen)
+        if not neue:
+            return
+        if not messagebox.askyesno("Anlegen bestätigen", f"{len(neue)} neue Mitarbeiter:innen jetzt anlegen?"):
+            return
+        self.si_create_button.configure(state="disabled")
+
+        def work():
+            erstellt, fehlgeschlagen = 0, 0
+            for vorname, nachname in neue:
+                try:
+                    self.api.create_mitarbeiter({
+                        "vorname": vorname, "nachname": nachname, "personalnummer": "",
+                        "funktion": "", "email": "", "telefon": "", "aktiv": True,
+                        "notizen": "Automatisch aus Tagesdienstplänen importiert.",
+                    })
+                    erstellt += 1
+                except (ApiError, requests.RequestException) as e:
+                    fehlgeschlagen += 1
+                    self.after(0, lambda v=vorname, n=nachname, e=e: self._log_stammdaten(f"  FEHLER bei {v} {n}: {e}"))
+            self.after(0, lambda: self._on_stammdaten_create_done(erstellt, fehlgeschlagen))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_stammdaten_create_done(self, erstellt: int, fehlgeschlagen: int):
+        self._si_neue_namen = []
+        self._log_stammdaten(f"\n{erstellt} Mitarbeiter:innen angelegt" + (f", {fehlgeschlagen} fehlgeschlagen." if fehlgeschlagen else "."))
+        self._refresh_mitarbeiter()
+        messagebox.showinfo("Import abgeschlossen", f"{erstellt} neue Mitarbeiter:innen angelegt.")
 
     # ---- Tab: Benutzerkonten -----------------------------------------------
     def _build_benutzer_tab(self, notebook: ttk.Notebook):

@@ -4,16 +4,19 @@ Korrekturen mit Änderungsprotokoll."""
 from __future__ import annotations
 
 import tempfile
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi.responses import Response
 
 from ..deps import get_current_role, require_admin, require_schichtleitung
+from ..dienstplan_export import export_dienstplan_excel
 from ..dienstplan_parser import parse_dienstplan_excel
 from ..dienstplan_sortierung import kategorisiere_und_sortiere
 from ..modules_repository import get_dienstplan_repository
+from ..repository import ReportsRepository, get_reports_repository
 from ..schemas import (
     DienstplanAuditOut,
     DienstplanEintragOut,
@@ -23,6 +26,72 @@ from ..schemas import (
 )
 
 router = APIRouter(prefix="/api/dienstplan", tags=["dienstplan"])
+
+# Für die virtuelle Krank-Überlagerung (siehe _virtuelle_krank_eintraege)
+# maximal betrachteter Zeitraum, um ausufernde Schleifen bei sehr großen
+# von/bis-Bereichen zu vermeiden.
+MAX_VIRTUELLE_TAGE = 62
+
+
+def _row_to_report_dict(row: Any) -> dict[str, Any]:
+    if isinstance(row, dict):
+        return dict(row)
+    return {
+        "id": row.id, "employee": row.employee, "sick_from": row.sick_from,
+        "sick_to": row.sick_to, "created_at": row.created_at,
+    }
+
+
+def _employee_zu_dienstplan_name(employee: str) -> str:
+    """Konvertiert das Krankmeldungs-Namensformat ('Nachname, Vorname') in
+    das Dienstplan-Anzeigeformat ('Vorname Nachname'); lässt Namen ohne
+    Komma unverändert (z. B. bereits im Dienstplan-Format)."""
+    if "," in employee:
+        nachname, _, vorname = employee.partition(",")
+        return f"{vorname.strip()} {nachname.strip()}".strip()
+    return employee.strip()
+
+
+def _virtuelle_krank_eintraege(
+    dienstplan_repo: Any, reports_repo: ReportsRepository, von: Optional[date], bis: Optional[date]
+) -> List[dict[str, Any]]:
+    """Liefert für Tage OHNE importierten Dienstplan (siehe get_quelle) je
+    laufender Krankmeldung einen schreibgeschützten virtuellen Eintrag, damit
+    länger andauernde Krankmeldungen auch ohne Excel-Import sichtbar sind."""
+    if von is None or bis is None or bis < von:
+        return []
+    anzahl_tage = (bis - von).days + 1
+    if anzahl_tage > MAX_VIRTUELLE_TAGE:
+        return []
+
+    tage_ohne_import = [
+        von + timedelta(days=i)
+        for i in range(anzahl_tage)
+        if not dienstplan_repo.get_quelle(von + timedelta(days=i)).get("quelle_datei")
+    ]
+    if not tage_ohne_import:
+        return []
+
+    reports = [_row_to_report_dict(r) for r in reports_repo.list_reports()]
+    virtuelle: List[dict[str, Any]] = []
+    for tag in tage_ohne_import:
+        for report in reports:
+            if report["sick_from"] <= tag <= report["sick_to"]:
+                virtuelle.append({
+                    "id": f"virtual-{report['id']}-{tag.isoformat()}",
+                    "datum": tag,
+                    "mitarbeiter_name": _employee_zu_dienstplan_name(report["employee"]),
+                    "dienst_kategorie": None,
+                    "start_zeit": None,
+                    "end_zeit": None,
+                    "ist_krank": True,
+                    "ist_bulmorfahrer": False,
+                    "notiz": "",
+                    "quelle_datei": "",
+                    "created_at": report.get("created_at") or datetime.utcnow(),
+                    "virtuell": True,
+                })
+    return virtuelle
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
@@ -41,9 +110,11 @@ def list_dienstplan(
     von: Optional[date] = None,
     bis: Optional[date] = None,
     repo=Depends(get_dienstplan_repository),
+    reports_repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(get_current_role),
 ):
     rows = [_row_to_dict(r) for r in repo.list_eintraege(von, bis)]
+    rows.extend(_virtuelle_krank_eintraege(repo, reports_repo, von, bis))
     return kategorisiere_und_sortiere(rows)
 
 
@@ -56,6 +127,29 @@ def get_quelle(
     """Woher die angezeigten Daten stammen (Excel-Dateiname + Importzeitpunkt),
     damit sichtbar ist, dass von der importierten Datenbank gearbeitet wird."""
     return repo.get_quelle(datum)
+
+
+@router.get("/export")
+def export_dienstplan(
+    datum: date,
+    repo=Depends(get_dienstplan_repository),
+    reports_repo: ReportsRepository = Depends(get_reports_repository),
+    role: str = Depends(get_current_role),
+):
+    """Gibt den Dienstplan eines Tages als Excel-Datei zurück (angelehnt an
+    die Original-Tagesdienstplan-Vorlage, siehe dienstplan_export.py)."""
+    rows = [_row_to_dict(r) for r in repo.list_eintraege(datum, datum)]
+    rows.extend(_virtuelle_krank_eintraege(repo, reports_repo, datum, datum))
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Für diesen Tag liegen keine Dienstplan-Daten vor.")
+    sortierte_rows = kategorisiere_und_sortiere(rows)
+    inhalt = export_dienstplan_excel(datum, sortierte_rows)
+    dateiname = f"Dienstplan_{datum.strftime('%d.%m.%Y')}.xlsx"
+    return Response(
+        content=inhalt,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{dateiname}"'},
+    )
 
 
 @router.get("/audit", response_model=List[DienstplanAuditOut])

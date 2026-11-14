@@ -212,6 +212,18 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
   Erkennung abweichender Dienstzeiten, Filter (Suche/Status/Tag-Nacht-Anzeige),
   manuelle Korrektur (Krank/Bulli-Fahrer/Zeiten/Notiz) mit eigenem
   Änderungsprotokoll (`/api/dienstplan/audit`, nur Admin)
+- Dienstplan: Zusammenfassung Tag/Nacht/Dispo-Mitarbeiter im Dienst (inkl.
+  Krank-Anzahl je Gruppe), Excel-Export eines Tages
+  (`/api/dienstplan/export`, angelehnt an die Original-Vorlage), Namens-
+  Autovervollständigung aus den Mitarbeiter-Stammdaten im
+  Krankmeldungs-Formular
+- Dienstplan-Krank-Popup: Wird ein Eintrag im Dienstplan auf "Krank"
+  gesetzt, erscheint ein Popup zum direkten Anlegen der passenden
+  Krankmeldung (vorausgefüllt mit Name/Datum)
+- Mehrtägige Krankmeldungen werden auch an Tagen ohne Excel-Import als
+  schreibgeschützte "virtuelle" Dienstplan-Einträge angezeigt (Kennzeichnung
+  "Ohne Dienstplan"), sodass länger andauernde Krankheiten nicht aus dem
+  Blick geraten
 
 ## 4. Supabase-Sicherung (GUI-Werkzeug)
 
@@ -255,6 +267,13 @@ bereits laufen, das Tool spricht dieselbe `/api/...`-Schnittstelle an
 
 Funktionen:
 - **Mitarbeiter-Stammdaten**: anlegen, bearbeiten, löschen.
+- **Stammdaten-Import**: durchsucht einen Ordner mit echten Tagesdienstplan-
+  Excel-Dateien (z. B. `04_Tagesdienstpläne`) rekursiv nach Vor-/Nachnamen
+  (Unterordner `03_Krankmeldungen` wird ausgeschlossen) und legt daraus
+  fehlende Mitarbeiter-Stammdaten an (Duplikate werden übersprungen,
+  Vorschau vor dem Anlegen). Dateien, die aufgrund defekter/ungewöhnlicher
+  Ordnerstrukturen nicht lesbar sind, werden übersprungen und im Protokoll
+  als Fehler gezählt statt den Scan abzubrechen.
 - **Benutzerkonten**: Einzel-Logins anlegen (Benutzername, Passwort,
   Rolle mitarbeiter/schichtleitung/admin) und bearbeiten. Konten werden
   bewusst nicht gelöscht, sondern über „Aktiv" deaktiviert, damit das

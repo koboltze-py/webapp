@@ -17,12 +17,21 @@ Bewusst NICHT übernommen wurden die Nesk3-spezifischen Geschäftsregeln
 ausgeschlossene Namen) - diese sind an die andere Dienstplan-Struktur von
 Nesk3 gebunden und für die Erste-Hilfe-Station nicht ohne Weiteres gültig.
 Bei Bedarf kann das anhand echter Beispiel-Dateien ergänzt werden.
+
+Validiert gegen echte Tagesdienstplan-Dateien aus
+"04_Tagesdienstpläne" (z. B. 11_November\\10.11.2026.xlsx): Header NAME/
+DIENST/BEGINN/ENDE steht dort nicht in benachbarten Spalten (Lücke bei
+F/G) - das ist unproblematisch, da Spalten unabhängig per Label gesucht
+werden. Zusätzlich gibt es dort oft eine "EBENE"-Spalte direkt rechts von
+ENDE (Werte "Dienstplan"/"Abweichung"), die NICHT Teil der eigentlichen
+Notiz ist und deshalb beim Einlesen der Notiz übersprungen wird.
 """
 from __future__ import annotations
 
 import re
 import shutil
 import tempfile
+import time
 from datetime import date, datetime
 from datetime import time as dt_time
 from pathlib import Path
@@ -31,7 +40,15 @@ from typing import Any, Optional
 import openpyxl
 from openpyxl.utils.datetime import from_excel
 
+from .dienstplan_sortierung import SORTIER_RANG
+
 KRANK_WERTE = ("KRANK", "K")
+
+# Bekannte, vom System vollständig unterstützte Dienst-Kürzel (siehe
+# dienstplan_sortierung.SORTIER_RANG). Alles andere (z. B. "PS", "B1",
+# "RTF", "RNF" aus echten Dateien) wird als "unbekannt" gemeldet, aber
+# weiterhin regulär eingelesen und über die Uhrzeit grob einsortiert.
+BEKANNTE_KUERZEL = frozenset(SORTIER_RANG.keys())
 
 
 def _check_cell_color(*cell_objs: Any) -> bool:
@@ -153,9 +170,24 @@ def parse_dienstplan_excel(file_path: str | Path) -> dict[str, Any]:
     workbook = None
     try:
         # Datei in temp-Kopie lesen - umgeht Windows-/OneDrive-Dateisperren.
+        # Bei Massen-Scans vieler Dateien hintereinander (z. B. Stammdaten-
+        # Import) kommt es bei OneDrive-"Dateien auf Anforderung" gelegentlich
+        # zu kurzzeitigen WinError 3 ("Pfad nicht gefunden"), wenn eine Datei
+        # gerade erst heruntergeladen/synchronisiert wird - daher mit kurzer
+        # Pause erneut versuchen, bevor als Fehler gemeldet wird.
         with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
             tmp_file = tf.name
-        shutil.copy2(file_path, tmp_file)
+        letzter_fehler: Optional[OSError] = None
+        for versuch in range(3):
+            try:
+                shutil.copy2(file_path, tmp_file)
+                letzter_fehler = None
+                break
+            except OSError as exc:
+                letzter_fehler = exc
+                time.sleep(0.5 * (versuch + 1))
+        if letzter_fehler is not None:
+            raise letzter_fehler
         workbook = openpyxl.load_workbook(tmp_file, data_only=True)
         sheet = workbook.active
 
@@ -163,7 +195,7 @@ def parse_dienstplan_excel(file_path: str | Path) -> dict[str, Any]:
         header_row = None
         for row_idx in range(1, min(20, sheet.max_row + 1)):
             row_values = [cell.value for cell in sheet[row_idx]]
-            name_idx = dienst_idx = beginn_idx = ende_idx = None
+            name_idx = dienst_idx = beginn_idx = ende_idx = ebene_idx = None
             for col_idx, value in enumerate(row_values):
                 if isinstance(value, str):
                     v = value.strip().upper()
@@ -175,8 +207,13 @@ def parse_dienstplan_excel(file_path: str | Path) -> dict[str, Any]:
                         beginn_idx = col_idx
                     elif v == "ENDE":
                         ende_idx = col_idx
+                    elif v == "EBENE":
+                        ebene_idx = col_idx
             if name_idx is not None and dienst_idx is not None:
-                column_map = {"name": name_idx, "dienst": dienst_idx, "beginn": beginn_idx, "ende": ende_idx}
+                column_map = {
+                    "name": name_idx, "dienst": dienst_idx,
+                    "beginn": beginn_idx, "ende": ende_idx, "ebene": ebene_idx,
+                }
                 header_row = row_idx
                 break
 
@@ -191,7 +228,6 @@ def parse_dienstplan_excel(file_path: str | Path) -> dict[str, Any]:
 
         eintraege: list[dict[str, Any]] = []
         unbekannte_dienste: set[str] = set()
-        bekannte_kuerzel = {"T", "N", "DT", "DN"}
 
         for row in sheet.iter_rows(min_row=header_row + 1, values_only=False):
             row_list = list(row)
@@ -217,7 +253,7 @@ def parse_dienstplan_excel(file_path: str | Path) -> dict[str, Any]:
             dienst_kategorie = None
             if dienst_text and not ist_krank:
                 dienst_kategorie = dienst_text
-                if dienst_text not in bekannte_kuerzel:
+                if dienst_text not in BEKANNTE_KUERZEL:
                     unbekannte_dienste.add(dienst_text)
 
             start_zeit = end_zeit = None
@@ -228,10 +264,14 @@ def parse_dienstplan_excel(file_path: str | Path) -> dict[str, Any]:
 
             notiz = ""
             if column_map["ende"] is not None:
+                # Spalten rechts von ENDE enthalten die Notiz - die "EBENE"-
+                # Spalte (Dienstplan/Abweichung) ist kein Notiztext und wird
+                # übersprungen (siehe Modul-Docstring).
+                ignorierte_spalten = {column_map["ebene"]} if column_map["ebene"] is not None else set()
                 notiz_parts = [
                     str(cells[ci]).strip()
                     for ci in range(column_map["ende"] + 1, len(cells))
-                    if isinstance(cells[ci], str) and cells[ci].strip()
+                    if ci not in ignorierte_spalten and isinstance(cells[ci], str) and cells[ci].strip()
                 ]
                 notiz = "  |  ".join(notiz_parts)
 

@@ -46,6 +46,7 @@ th{background:#f3f5f7;white-space:nowrap}
 .pill.warn{background:#fff3b0;color:#7a5d00}
 .pill.info{background:#dce8ff;color:#123a8a}
 .dp-divider td{background:#eef0f4;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.04em;padding:6px 10px}
+.dp-virtuell{font-style:italic;color:var(--muted)}
 .tabnav{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap}
 .tabnav button{background:#e8ecf1;color:var(--ink)}
 .tabnav button.active{background:var(--primary);color:#fff}
@@ -203,8 +204,14 @@ th{background:#f3f5f7;white-space:nowrap}
             <div><label for="dienstplanSortierung">Sortierung</label><select id="dienstplanSortierung"><option value="standard" selected>Standard (Dienstart)</option><option value="name">Name A-Z</option><option value="beginn">Beginn der Schicht</option></select></div>
             <div><label>Schicht</label><label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanTagschicht" checked style="width:auto"> Tagschicht</label> <label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanNachtschicht" checked style="width:auto"> Nachtschicht</label></div>
             <button type="button" id="dienstplanLaden" class="secondary">Laden</button>
+            <button type="button" id="dienstplanExport" class="secondary">Als Excel exportieren</button>
           </div>
           <p class="small muted" id="dienstplanQuelle"></p>
+          <section class="summary" id="dienstplanZusammenfassung" style="margin:0 0 14px">
+            <div class="metric"><strong id="dpSumTag">–</strong><span>Tag im Dienst (<span id="dpSumTagKrank">0</span> krank)</span></div>
+            <div class="metric"><strong id="dpSumNacht">–</strong><span>Nacht im Dienst (<span id="dpSumNachtKrank">0</span> krank)</span></div>
+            <div class="metric"><strong id="dpSumDispo">–</strong><span>Dispo im Dienst (<span id="dpSumDispoKrank">0</span> krank)</span></div>
+          </section>
           <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
           <p id="dienstplanMessage" class="small muted" role="status"></p>
         </section>
@@ -220,6 +227,20 @@ th{background:#f3f5f7;white-space:nowrap}
             </div>
             <div class="actions"><button type="submit">Speichern</button><button type="button" id="dpEditAbbrechen" class="secondary">Abbrechen</button></div>
             <p id="dienstplanEditMessage" class="small" role="status"></p>
+          </form>
+        </section>
+        <section class="card hidden" id="dienstplanKrankPopup">
+          <h2>Krankmeldung anlegen für <span id="dpKrankPopupName"></span>?</h2>
+          <p class="small muted">Der Eintrag wurde gerade als "Krank" markiert. Soll dazu auch eine Krankmeldung erfasst werden?</p>
+          <form id="dpKrankPopupForm">
+            <div class="grid">
+              <div><label for="dpKrankVon">Krank von</label><input id="dpKrankVon" type="date" required></div>
+              <div><label for="dpKrankBis">Krank bis</label><input id="dpKrankBis" type="date" required></div>
+              <div><label for="dpKrankAngenommenVon">Angenommen von</label><input id="dpKrankAngenommenVon" maxlength="150" placeholder="Disponent"></div>
+              <div class="wide"><label for="dpKrankNotiz">Bemerkungen (keine Diagnosen)</label><input id="dpKrankNotiz" maxlength="1000"></div>
+            </div>
+            <div class="actions"><button type="submit">Krankmeldung anlegen</button><button type="button" id="dpKrankPopupAbbrechen" class="secondary">Nur Dienstplan (keine Krankmeldung)</button></div>
+            <p id="dpKrankPopupMessage" class="small" role="status"></p>
           </form>
         </section>
         <section class="card" data-min-role="admin">
@@ -250,7 +271,7 @@ th{background:#f3f5f7;white-space:nowrap}
             <form id="entryForm">
               <div class="grid">
                 <div><label for="reportedAt">Meldedatum</label><input id="reportedAt" type="date" required></div>
-                <div><label for="employee">Meldender (Mitarbeiter)</label><input id="employee" required maxlength="150" placeholder="Nachname, Vorname"></div>
+                <div><label for="employee">Meldender (Mitarbeiter)</label><input id="employee" required maxlength="150" placeholder="Nachname, Vorname" list="employeeSuggestions" autocomplete="off"><datalist id="employeeSuggestions"></datalist></div>
                 <div><label for="sickFrom">Krank von</label><input id="sickFrom" type="date" required></div>
                 <div><label for="sickTo">Krank bis</label><input id="sickTo" type="date" required></div>
                 <div><label for="callAt">Anruf um</label><input id="callAt" type="time"></div>
@@ -389,6 +410,17 @@ async function apiUpload(path,formData){
   try{body=await res.json()}catch(e){body=null}
   if(!res.ok){const detail=(body&&body.detail)?body.detail:('Fehler '+res.status);throw new Error(detail)}
   return body;
+}
+async function apiDownload(path){
+  const res=await fetch(path,{credentials:'same-origin'});
+  if(!res.ok){
+    let detail='Fehler '+res.status;
+    try{const body=await res.json();if(body&&body.detail)detail=body.detail}catch(e){}
+    throw new Error(detail);
+  }
+  const blob=await res.blob();
+  const match=/filename="([^"]+)"/.exec(res.headers.get('Content-Disposition')||'');
+  return {blob,filename:match?match[1]:'export.xlsx'};
 }
 
 function applyRoleVisibility(){
@@ -622,8 +654,16 @@ $('mitarbeiterForm').onsubmit=async e=>{
 };
 $('maResetBtn').onclick=resetMitarbeiterForm;
 async function loadMitarbeiter(){
-  try{mitarbeiterListe=await api('/api/mitarbeiter');renderMitarbeiter()}
+  try{mitarbeiterListe=await api('/api/mitarbeiter');renderMitarbeiter();renderEmployeeSuggestions()}
   catch(err){msg('mitarbeiterMessage','Abruf fehlgeschlagen: '+err.message,true)}
+}
+function renderEmployeeSuggestions(){
+  const list=$('employeeSuggestions');if(!list)return;
+  list.replaceChildren();
+  for(const m of mitarbeiterListe){
+    if(!m.aktiv)continue;
+    const opt=document.createElement('option');opt.value=m.nachname+', '+m.vorname;list.append(opt);
+  }
 }
 function renderMitarbeiter(){
   const body=$('mitarbeiterEntries');body.replaceChildren();
@@ -694,7 +734,7 @@ $('auditExport').onclick=()=>{
 };
 
 /* ============================= Dienstplan ============================= */
-let dienstplanRows=[],dienstplanEditingId=null;
+let dienstplanRows=[],dienstplanEditingId=null,dienstplanEditingEntry=null,dienstplanKrankPopupEntry=null;
 $('dienstplanImportForm').onsubmit=async e=>{
   e.preventDefault();
   const file=$('dienstplanDatei').files[0];
@@ -712,6 +752,17 @@ $('dienstplanImportForm').onsubmit=async e=>{
   }catch(err){msg('dienstplanImportMessage','Import fehlgeschlagen: '+err.message,true)}
 };
 $('dienstplanLaden').onclick=loadDienstplan;
+$('dienstplanExport').onclick=async()=>{
+  const tag=$('dienstplanDatum').value||today();
+  msg('dienstplanMessage','Export wird erstellt …');
+  try{
+    const {blob,filename}=await apiDownload('/api/dienstplan/export?datum='+tag);
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement('a');link.href=url;link.download=filename;link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    msg('dienstplanMessage','Export heruntergeladen: '+filename);
+  }catch(err){msg('dienstplanMessage','Export fehlgeschlagen: '+err.message,true)}
+};
 for(const id of ['dienstplanSuche','dienstplanStatusFilter','dienstplanSortierung','dienstplanTagschicht','dienstplanNachtschicht'])$(id).addEventListener('input',renderDienstplan);
 
 async function loadDienstplan(){
@@ -719,6 +770,7 @@ async function loadDienstplan(){
   try{
     dienstplanRows=await api('/api/dienstplan?von='+tag+'&bis='+tag);
     renderDienstplan();
+    renderDienstplanZusammenfassung();
     const quelle=await api('/api/dienstplan/quelle?datum='+tag);
     if(quelle.quelle_datei){
       msg('dienstplanQuelle','Aus importierter Dienstplan-Datenbank · Quelle: "'+quelle.quelle_datei+'" · importiert am '+new Date(quelle.importiert_am).toLocaleString('de-DE')+' · '+quelle.anzahl_eintraege+' Einträge.');
@@ -726,6 +778,17 @@ async function loadDienstplan(){
       msg('dienstplanQuelle','Für '+fmt(tag)+' wurde noch kein Dienstplan importiert.');
     }
   }catch(err){msg('dienstplanMessage','Abruf fehlgeschlagen: '+err.message,true)}
+}
+function renderDienstplanZusammenfassung(){
+  const tag=dienstplanRows.filter(e=>e.schicht_typ==='tag');
+  const nacht=dienstplanRows.filter(e=>e.schicht_typ==='nacht');
+  const dispo=dienstplanRows.filter(e=>e.ist_dispo);
+  $('dpSumTag').textContent=tag.length;
+  $('dpSumTagKrank').textContent=tag.filter(e=>e.ist_krank).length;
+  $('dpSumNacht').textContent=nacht.length;
+  $('dpSumNachtKrank').textContent=nacht.filter(e=>e.ist_krank).length;
+  $('dpSumDispo').textContent=dispo.length;
+  $('dpSumDispoKrank').textContent=dispo.filter(e=>e.ist_krank).length;
 }
 function dienstplanGefiltert(){
   const q=$('dienstplanSuche').value.trim().toLocaleLowerCase('de-DE');
@@ -757,20 +820,24 @@ function renderDienstplan(){
     }
     vorherigeDispo=e.ist_dispo;
     const tr=body.insertRow();
+    tr.classList.toggle('dp-virtuell',!!e.virtuell);
     cell(tr,e.mitarbeiter_name);cell(tr,e.dienst_kategorie||(e.effektive_kategorie?'(KRANK, eig. '+e.effektive_kategorie+')':'–'));cell(tr,e.start_zeit||'–');cell(tr,e.end_zeit||'–');
     const statusCell=tr.insertCell();
     if(e.ist_krank){const p=document.createElement('span');p.className='pill';p.textContent='Krank';statusCell.append(p,document.createTextNode(' '))}
     if(e.ist_bulmorfahrer){const p=document.createElement('span');p.className='pill warn';p.textContent='Bulli-Fahrer:in';statusCell.append(p,document.createTextNode(' '))}
     if(e.zeit_abweichend){const p=document.createElement('span');p.className='pill info';p.textContent='Abweichende Zeit';statusCell.append(p,document.createTextNode(' '))}
-    if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend)statusCell.append(text('–'));
+    if(e.virtuell){const p=document.createElement('span');p.className='pill info';p.title='Aus laufender Krankmeldung übernommen, noch kein Dienstplan für diesen Tag importiert.';p.textContent='Ohne Dienstplan';statusCell.append(p,document.createTextNode(' '))}
+    if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend&&!e.virtuell)statusCell.append(text('–'));
     cell(tr,e.notiz||'–');
     const actionCell=tr.insertCell();actionCell.dataset.minRole='schichtleitung';actionCell.classList.toggle('hidden',!roleAtLeast('schichtleitung'));
-    const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit);
+    if(e.virtuell){actionCell.append(text('–'))}
+    else{const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit)}
   }
   msg('dienstplanMessage',rows.length+' von '+dienstplanRows.length+' Eintrag/Einträgen angezeigt.');
 }
 function openDienstplanEdit(e){
   dienstplanEditingId=e.id;
+  dienstplanEditingEntry=e;
   $('dienstplanEditName').textContent=e.mitarbeiter_name;
   $('dpEditKrank').value=String(e.ist_krank);
   $('dpEditBulli').value=String(e.ist_bulmorfahrer);
@@ -781,12 +848,14 @@ function openDienstplanEdit(e){
   $('dienstplanEditCard').classList.remove('hidden');
   $('dienstplanEditCard').scrollIntoView({behavior:'smooth',block:'center'});
 }
-$('dpEditAbbrechen').onclick=()=>{dienstplanEditingId=null;$('dienstplanEditCard').classList.add('hidden')};
+$('dpEditAbbrechen').onclick=()=>{dienstplanEditingId=null;dienstplanEditingEntry=null;$('dienstplanEditCard').classList.add('hidden')};
 $('dienstplanEditForm').onsubmit=async e=>{
   e.preventDefault();
   if(!dienstplanEditingId)return;
+  const warKrank=!!(dienstplanEditingEntry&&dienstplanEditingEntry.ist_krank);
+  const istJetztKrank=$('dpEditKrank').value==='true';
   const payload={
-    ist_krank:$('dpEditKrank').value==='true',
+    ist_krank:istJetztKrank,
     ist_bulmorfahrer:$('dpEditBulli').value==='true',
     start_zeit:$('dpEditBeginn').value||null,
     end_zeit:$('dpEditEnde').value||null,
@@ -796,10 +865,43 @@ $('dienstplanEditForm').onsubmit=async e=>{
     await api('/api/dienstplan/'+dienstplanEditingId,{method:'PUT',body:JSON.stringify(payload)});
     msg('dienstplanEditMessage','Gespeichert.');
     $('dienstplanEditCard').classList.add('hidden');
-    dienstplanEditingId=null;
-    await loadDienstplan();
     if(roleAtLeast('admin')&&!$('dienstplanAuditWrap').classList.contains('hidden'))await loadDienstplanAudit();
+    if(!warKrank&&istJetztKrank)openKrankPopup(dienstplanEditingEntry);
+    dienstplanEditingId=null;dienstplanEditingEntry=null;
+    await loadDienstplan();
   }catch(err){msg('dienstplanEditMessage','Speichern fehlgeschlagen: '+err.message,true)}
+};
+/* Popup: Krank-Markierung im Dienstplan -> optional direkt eine echte Krankmeldung anlegen */
+function openKrankPopup(entry){
+  const tag=$('dienstplanDatum').value||today();
+  $('dpKrankPopupName').textContent=entry.mitarbeiter_name;
+  $('dpKrankVon').value=tag;$('dpKrankBis').value=tag;
+  $('dpKrankAngenommenVon').value='';$('dpKrankNotiz').value='';
+  msg('dpKrankPopupMessage','');
+  $('dienstplanKrankPopup').classList.remove('hidden');
+  $('dienstplanKrankPopup').scrollIntoView({behavior:'smooth',block:'center'});
+  dienstplanKrankPopupEntry=entry;
+}
+$('dpKrankPopupAbbrechen').onclick=()=>{dienstplanKrankPopupEntry=null;$('dienstplanKrankPopup').classList.add('hidden')};
+$('dpKrankPopupForm').onsubmit=async e=>{
+  e.preventDefault();
+  if(!dienstplanKrankPopupEntry)return;
+  const payload={
+    reported_at:today(),
+    employee:dienstplanKrankPopupEntry.mitarbeiter_name,
+    sick_from:$('dpKrankVon').value,
+    sick_to:$('dpKrankBis').value,
+    call_at:null,
+    accepted_by:$('dpKrankAngenommenVon').value.trim(),
+    notes:$('dpKrankNotiz').value.trim(),
+    careman_done:false,
+  };
+  try{
+    await api('/api/reports',{method:'POST',body:JSON.stringify(payload)});
+    msg('dpKrankPopupMessage','Krankmeldung angelegt.');
+    dienstplanKrankPopupEntry=null;
+    setTimeout(()=>$('dienstplanKrankPopup').classList.add('hidden'),900);
+  }catch(err){msg('dpKrankPopupMessage','Anlegen fehlgeschlagen: '+err.message,true)}
 };
 $('dienstplanAuditToggle').onclick=async()=>{
   const wrap=$('dienstplanAuditWrap');

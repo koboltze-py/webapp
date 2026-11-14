@@ -141,6 +141,10 @@ class DienstplanEintragOut(BaseModel):
     notiz: str = ""
     quelle_datei: str = ""
     created_at: datetime
+    # True = kein echter Dienstplan-Eintrag, sondern aus einer laufenden
+    # Krankmeldung abgeleitet (Tag noch nicht aus Excel importiert). Nur
+    # lesbar, siehe routers/dienstplan.py (_virtuelle_krank_eintraege).
+    virtuell: bool = False
     # Serverseitig berechnet (siehe dienstplan_sortierung.py), nicht gespeichert:
     effektive_kategorie: Optional[str] = None
     sortier_rang: int = 999
