@@ -1,0 +1,27 @@
+Dieser Ordner enthält vollständige Sicherungen des gesamten Software-Standes
+(Backend, Frontend, Verwaltungstool, Supabase-Sicherung-Werkzeug, Start-
+Skripte, README). Jede Sicherung liegt in einem eigenen, nach Datum/Uhrzeit
+benannten Unterordner, z. B. 2026-11-14_13-46-33\.
+
+Enthalten ist eine 1:1-Kopie des Projektordners "Webapp mit Fastapi" zum
+Zeitpunkt der Sicherung, inklusive:
+  - backend\ (Code, requirements.txt, backend\.env, backend\data\*.db)
+  - frontend\ (komplette Weboberfläche)
+  - Verwaltungstool\ (Desktop-GUI)
+  - Supabase-Sicherung\ (Backup-Werkzeug)
+  - README.md, .gitignore, Start-Skripte (*.bat)
+
+Ausgeschlossen sind: .git\ (Versionsverlauf, liegt im GitHub-Repository
+koboltze-py/webapp), __pycache__\-Ordner (automatisch erzeugt, nicht
+nötig), .vscode\ (lokale Editor-Einstellungen) sowie dieser Backups-Ordner
+selbst.
+
+Wiederherstellung: Inhalt des gewünschten Zeitstempel-Ordners an die
+gewünschte Stelle kopieren und wie gewohnt über start_app.bat /
+start_verwaltungstool.bat starten (die virtuellen Python-Umgebungen
+werden bei Bedarf automatisch neu angelegt, siehe README.md).
+
+Datenschutz: Diese Sicherungen enthalten Gesundheitsdaten (lokale
+Datenbank backend\data\krankmeldungen.db) sowie backend\.env mit
+Zugangsdaten/Geheimnissen. Zugriff beschränken und nach Löschkonzept
+entsorgen.
