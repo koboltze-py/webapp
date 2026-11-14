@@ -208,9 +208,9 @@ th{background:#f3f5f7;white-space:nowrap}
           </div>
           <p class="small muted" id="dienstplanQuelle"></p>
           <section class="summary" id="dienstplanZusammenfassung" style="margin:0 0 14px">
-            <div class="metric"><strong id="dpSumTag">–</strong><span>Tag im Dienst (<span id="dpSumTagKrank">0</span> krank)</span></div>
-            <div class="metric"><strong id="dpSumNacht">–</strong><span>Nacht im Dienst (<span id="dpSumNachtKrank">0</span> krank)</span></div>
-            <div class="metric"><strong id="dpSumDispo">–</strong><span>Dispo im Dienst (<span id="dpSumDispoKrank">0</span> krank)</span></div>
+            <div class="metric"><strong id="dpSumTag">–</strong><span>Tag im Dienst, ohne Dispo (<span id="dpSumTagKrank">0</span> krank)</span></div>
+            <div class="metric"><strong id="dpSumNacht">–</strong><span>Nacht im Dienst, ohne Dispo (<span id="dpSumNachtKrank">0</span> krank)</span></div>
+            <div class="metric"><strong id="dpSumDispo">–</strong><span>Dispo im Dienst: <span id="dpSumDispoTag">0</span> Tag / <span id="dpSumDispoNacht">0</span> Nacht (<span id="dpSumDispoKrank">0</span> krank)</span></div>
           </section>
           <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
           <p id="dienstplanMessage" class="small muted" role="status"></p>
@@ -780,14 +780,18 @@ async function loadDienstplan(){
   }catch(err){msg('dienstplanMessage','Abruf fehlgeschlagen: '+err.message,true)}
 }
 function renderDienstplanZusammenfassung(){
-  const tag=dienstplanRows.filter(e=>e.schicht_typ==='tag');
-  const nacht=dienstplanRows.filter(e=>e.schicht_typ==='nacht');
+  const tag=dienstplanRows.filter(e=>e.schicht_typ==='tag'&&!e.ist_dispo);
+  const nacht=dienstplanRows.filter(e=>e.schicht_typ==='nacht'&&!e.ist_dispo);
   const dispo=dienstplanRows.filter(e=>e.ist_dispo);
+  const dispoTag=dispo.filter(e=>e.schicht_typ==='tag');
+  const dispoNacht=dispo.filter(e=>e.schicht_typ==='nacht');
   $('dpSumTag').textContent=tag.length;
   $('dpSumTagKrank').textContent=tag.filter(e=>e.ist_krank).length;
   $('dpSumNacht').textContent=nacht.length;
   $('dpSumNachtKrank').textContent=nacht.filter(e=>e.ist_krank).length;
   $('dpSumDispo').textContent=dispo.length;
+  $('dpSumDispoTag').textContent=dispoTag.length;
+  $('dpSumDispoNacht').textContent=dispoNacht.length;
   $('dpSumDispoKrank').textContent=dispo.filter(e=>e.ist_krank).length;
 }
 function dienstplanGefiltert(){
