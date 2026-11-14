@@ -106,3 +106,21 @@ class Meldung(Base):
     angeheftet = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DienstplanAudit(Base):
+    """Änderungsprotokoll für Dienstplan-Einträge (manuelle Korrekturen nach
+    dem Excel-Import: Krank-Status, Dienstzeiten, Notizen). Unveränderlich,
+    bleibt auch nach Lösch-/Neuimport des zugehörigen Eintrags erhalten."""
+
+    __tablename__ = "dienstplan_audit"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    dienstplan_id = Column(Integer, nullable=True, index=True)
+    mitarbeiter_name = Column(String(150), nullable=False, default="")
+    action = Column(String(10), nullable=False)  # UPDATE
+    actor_role = Column(String(20), nullable=False)
+    actor_username = Column(String(80), nullable=False, default="")
+    old_data = Column(JSON, nullable=True)
+    new_data = Column(JSON, nullable=True)

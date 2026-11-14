@@ -141,6 +141,40 @@ class DienstplanEintragOut(BaseModel):
     notiz: str = ""
     quelle_datei: str = ""
     created_at: datetime
+    # Serverseitig berechnet (siehe dienstplan_sortierung.py), nicht gespeichert:
+    effektive_kategorie: Optional[str] = None
+    sortier_rang: int = 999
+    ist_dispo: bool = False
+    zeit_abweichend: bool = False
+
+
+class DienstplanEintragUpdate(BaseModel):
+    ist_krank: Optional[bool] = None
+    ist_bulmorfahrer: Optional[bool] = None
+    start_zeit: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    end_zeit: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    notiz: Optional[str] = Field(None, max_length=500)
+
+
+class DienstplanQuelle(BaseModel):
+    datum: date
+    quelle_datei: Optional[str] = None
+    importiert_am: Optional[datetime] = None
+    anzahl_eintraege: int = 0
+
+
+class DienstplanAuditOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: Union[int, str]
+    event_at: datetime
+    dienstplan_id: Optional[Union[int, str]] = None
+    mitarbeiter_name: str = ""
+    action: str
+    actor_role: str
+    actor_username: str = ""
+    old_data: Optional[dict] = None
+    new_data: Optional[dict] = None
 
 
 class DienstplanImportResult(BaseModel):

@@ -16,7 +16,7 @@ from . import supabase_client as sb
 from .config import settings
 from .database import SessionLocal
 from .deps import session_tier
-from .models import Benutzer, DienstplanEintrag, Meldung, Mitarbeiter
+from .models import Benutzer, DienstplanEintrag, DienstplanAudit, Meldung, Mitarbeiter
 
 
 # ============================================================================
@@ -190,6 +190,18 @@ def get_mitarbeiter_repository(request: Request) -> Iterator["SqliteMitarbeiterR
 # ============================================================================
 
 
+def _snapshot_dienstplan_orm(row: DienstplanEintrag) -> dict[str, Any]:
+    return {
+        "mitarbeiter_name": row.mitarbeiter_name,
+        "dienst_kategorie": row.dienst_kategorie,
+        "start_zeit": row.start_zeit,
+        "end_zeit": row.end_zeit,
+        "ist_krank": row.ist_krank,
+        "ist_bulmorfahrer": row.ist_bulmorfahrer,
+        "notiz": row.notiz,
+    }
+
+
 class SqliteDienstplanRepository:
     def __init__(self, db):
         self.db = db
@@ -216,6 +228,39 @@ class SqliteDienstplanRepository:
             self.db.refresh(row)
         return rows
 
+    def update_eintrag(self, eintrag_id, data: dict[str, Any], actor_role: str, actor_username: str) -> DienstplanEintrag:
+        row = self.db.get(DienstplanEintrag, int(eintrag_id))
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dienstplan-Eintrag nicht gefunden.")
+        old_data = _snapshot_dienstplan_orm(row)
+        for key, value in data.items():
+            setattr(row, key, value)
+        self.db.commit()
+        self.db.refresh(row)
+        new_data = _snapshot_dienstplan_orm(row)
+        self.db.add(
+            DienstplanAudit(
+                dienstplan_id=row.id, mitarbeiter_name=row.mitarbeiter_name, action="UPDATE",
+                actor_role=actor_role, actor_username=actor_username, old_data=old_data, new_data=new_data,
+            )
+        )
+        self.db.commit()
+        return row
+
+    def list_audit(self) -> list[DienstplanAudit]:
+        return self.db.query(DienstplanAudit).order_by(DienstplanAudit.event_at.desc(), DienstplanAudit.id.desc()).all()
+
+    def get_quelle(self, tag: date) -> dict[str, Any]:
+        rows = self.db.query(DienstplanEintrag).filter(DienstplanEintrag.datum == tag).all()
+        if not rows:
+            return {"datum": tag, "quelle_datei": None, "importiert_am": None, "anzahl_eintraege": 0}
+        return {
+            "datum": tag,
+            "quelle_datei": rows[0].quelle_datei,
+            "importiert_am": max(r.created_at for r in rows),
+            "anzahl_eintraege": len(rows),
+        }
+
 
 class SupabaseDienstplanRepository(_SupabaseRoleRepository):
     def list_eintraege(self, von: Optional[date] = None, bis: Optional[date] = None) -> list[dict[str, Any]]:
@@ -236,6 +281,48 @@ class SupabaseDienstplanRepository(_SupabaseRoleRepository):
             row = self._call(sb.insert_row, sb.DIENSTPLAN_TABLE, {"datum": tag, "quelle_datei": quelle_datei, **e})
             neue.append(row)
         return neue
+
+    def update_eintrag(self, eintrag_id, data: dict[str, Any], actor_role: str, actor_username: str) -> dict[str, Any]:
+        old_row = self._call(sb.get_row, sb.DIENSTPLAN_TABLE, eintrag_id)
+        if not old_row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dienstplan-Eintrag nicht gefunden.")
+        new_row = self._call(sb.update_row, sb.DIENSTPLAN_TABLE, eintrag_id, data)
+        if not new_row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dienstplan-Eintrag nicht gefunden.")
+        try:
+            self._call(
+                sb.insert_row,
+                sb.DIENSTPLAN_AUDIT_TABLE,
+                {
+                    "dienstplan_id": eintrag_id,
+                    "mitarbeiter_name": new_row.get("mitarbeiter_name", ""),
+                    "action": "UPDATE",
+                    "actor_role": actor_role,
+                    "actor_username": actor_username,
+                    "old_data": {k: old_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "notiz")},
+                    "new_data": {k: new_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "notiz")},
+                },
+            )
+        except sb.SupabaseError as exc:
+            print(f"[WARN] Dienstplan-Änderungsprotokoll konnte nicht geschrieben werden: {exc}")
+        return new_row
+
+    def list_audit(self) -> list[dict[str, Any]]:
+        try:
+            return self._call(sb.list_rows, sb.DIENSTPLAN_AUDIT_TABLE, order="event_at.desc,id.desc")
+        except sb.SupabaseError:
+            return []
+
+    def get_quelle(self, tag: date) -> dict[str, Any]:
+        rows = [r for r in self._call(sb.list_rows, sb.DIENSTPLAN_TABLE, order="id.asc") if r.get("datum") == tag.isoformat()]
+        if not rows:
+            return {"datum": tag, "quelle_datei": None, "importiert_am": None, "anzahl_eintraege": 0}
+        return {
+            "datum": tag,
+            "quelle_datei": rows[0].get("quelle_datei"),
+            "importiert_am": max(r.get("created_at") for r in rows),
+            "anzahl_eintraege": len(rows),
+        }
 
 
 def get_dienstplan_repository(request: Request) -> Iterator["SqliteDienstplanRepository | SupabaseDienstplanRepository"]:

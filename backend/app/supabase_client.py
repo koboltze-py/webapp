@@ -20,6 +20,7 @@ AUDIT_TABLE = "sick_report_audit"
 BENUTZER_TABLE = "benutzer"
 MITARBEITER_TABLE = "mitarbeiter"
 DIENSTPLAN_TABLE = "dienstplan"
+DIENSTPLAN_AUDIT_TABLE = "dienstplan_audit"
 MELDUNGEN_TABLE = "meldungen"
 
 _TIMEOUT = 30
