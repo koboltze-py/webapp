@@ -23,8 +23,12 @@ Webapp mit Fastapi/
 │   └── config.json
 ├── Backups/
 │   └── Supabase/              Zielordner der Sicherungen (ein Unterordner je Lauf)
+├── Verwaltungstool/            Desktop-GUI fuer Mitarbeiter/Benutzer/Dienstplan-Import
+│   ├── gui.py
+│   └── requirements.txt
 ├── start_app.bat              Startet Webapp + Backend gemeinsam
 ├── start_supabase_backup_gui.bat   Startet die Sicherungs-GUI
+├── start_verwaltungstool.bat   Startet das Verwaltungstool
 └── README.md                  diese Datei
 ```
 
@@ -202,7 +206,26 @@ Die Supabase-Projekt-URL und der öffentliche Anon-/Publishable-Key stehen
 in `Supabase-Sicherung\config.json` (identisch zu den Werten aus der
 alten `config.js`). Das Passwort wird nie gespeichert.
 
-## 5. Datenschutz (unverändert wichtig)
+## 5. Verwaltungstool (Desktop-GUI)
+
+Für Mitarbeiter-Stammdaten, Benutzerkonten (Einzel-Logins) und den
+Dienstplan-Excel-Import gibt es ein eigenes Desktop-Tool, damit das
+nicht zwingend über die Webseite laufen muss. Start über
+**`start_verwaltungstool.bat`** – die Webapp (`start_app.bat`) muss dafür
+bereits laufen, das Tool spricht dieselbe `/api/...`-Schnittstelle an
+(eigener Login, nur für die Rolle Admin).
+
+Funktionen:
+- **Mitarbeiter-Stammdaten**: anlegen, bearbeiten, löschen.
+- **Benutzerkonten**: Einzel-Logins anlegen (Benutzername, Passwort,
+  Rolle mitarbeiter/schichtleitung/admin) und bearbeiten. Konten werden
+  bewusst nicht gelöscht, sondern über „Aktiv" deaktiviert, damit das
+  Änderungsprotokoll nachvollziehbar bleibt.
+- **Dienstplan-Import**: Excel-Datei auswählen und importieren, inkl.
+  Rückmeldung zu Anzahl Einträgen, Krank-Meldungen, Bulli-Fahrer:innen
+  und unbekannten Dienstkürzeln.
+
+## 6. Datenschutz (unverändert wichtig)
 
 - Krankmeldungen enthalten besonders schützenswerte Gesundheitsdaten.
 - Gemeinsame Logins verhindern individuelle Nachvollziehbarkeit beim
@@ -215,7 +238,7 @@ alten `config.js`). Das Passwort wird nie gespeichert.
 - Vor Produktivbetrieb mit den Datenschutzverantwortlichen klären:
   Rechtsgrundlage, TOMs, Aufbewahrung und Löschkonzept, Zugangsberechtigung.
 
-## 6. Manuelle Befehle (optional, für Entwickler)
+## 7. Manuelle Befehle (optional, für Entwickler)
 
 Falls die `.bat`-Dateien nicht verwendet werden sollen:
 
