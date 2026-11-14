@@ -917,7 +917,7 @@ class App(tk.Tk):
         ttk.Label(
             tab,
             text="Tagesdienstplan (.xlsx) mit Spalten NAME/DIENST/BEGINN/ENDE importieren.\n"
-            "\"KRANK\"/\"K\" wird als Krankmeldung erkannt, gelb hinterlegte Zeilen als Bulli-Fahrer:in.\n"
+            "\"KRANK\"/\"K\" wird als Krankmeldung erkannt, gelb hinterlegte Zeilen als Bulmor-Fahrer:in.\n"
             "Ein erneuter Import für denselben Tag ersetzt die zuvor importierten Einträge dieses Tages.",
             justify="left", wraplength=800,
         ).pack(anchor="w", pady=(0, 12))
@@ -975,7 +975,7 @@ class App(tk.Tk):
             return
         self._log_dienstplan(
             f"Erfolgreich importiert für {result.get('datum')}: {result['anzahl_eintraege']} Einträge "
-            f"({result['anzahl_krank']} krank, {result['anzahl_bulmorfahrer']} Bulli-Fahrer:in)."
+            f"({result['anzahl_krank']} krank, {result['anzahl_bulmorfahrer']} Bulmor-Fahrer:in)."
         )
         if result.get("unbekannte_dienste"):
             self._log_dienstplan("Unbekannte Dienstkürzel (bitte prüfen): " + ", ".join(result["unbekannte_dienste"]))

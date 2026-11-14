@@ -193,7 +193,7 @@ th{background:#f3f5f7;white-space:nowrap}
         <div class="pagehead"><div><h2>Dienstplan</h2><p class="small muted">Tagesdienstplan anzeigen, aus Excel importieren und bei Bedarf korrigieren.</p></div></div>
         <section class="card" data-min-role="schichtleitung">
           <h2>Tagesdienstplan importieren</h2>
-          <p class="small muted">Excel-Datei (.xlsx) mit Spalten NAME/DIENST/BEGINN/ENDE. "KRANK"/"K" wird als Krankmeldung erkannt, gelb hinterlegte Zeilen als Bulli-Fahrer:in. Ein Import ersetzt die bisherigen Einträge dieses Tages in der lokalen Dienstplan-Datenbank.</p>
+          <p class="small muted">Excel-Datei (.xlsx) mit Spalten NAME/DIENST/BEGINN/ENDE. "KRANK"/"K" wird als Krankmeldung erkannt, gelb hinterlegte Zeilen als Bulmor-Fahrer:in. Ein Import ersetzt die bisherigen Einträge dieses Tages in der lokalen Dienstplan-Datenbank.</p>
           <form id="dienstplanImportForm" class="actions">
             <input id="dienstplanDatei" type="file" accept=".xlsx,.xlsm" required style="max-width:320px">
             <button type="submit">Datei importieren</button>
@@ -204,7 +204,7 @@ th{background:#f3f5f7;white-space:nowrap}
           <div class="toolbar">
             <div><label for="dienstplanDatum">Datum</label><input id="dienstplanDatum" type="date"></div>
             <div><label for="dienstplanSuche">Mitarbeiter suchen</label><input id="dienstplanSuche" placeholder="Name eingeben" autocomplete="off"></div>
-            <div><label for="dienstplanStatusFilter">Status</label><select id="dienstplanStatusFilter"><option value="all">Alle</option><option value="krank">Nur Krank</option><option value="bulli">Nur Bulli-Fahrer:in</option><option value="abweichend">Nur abweichende Zeiten</option><option value="regulaer">Nur regulär</option></select></div>
+            <div><label for="dienstplanStatusFilter">Status</label><select id="dienstplanStatusFilter"><option value="all">Alle</option><option value="krank">Nur Krank</option><option value="bulli">Nur Bulmor-Fahrer:in</option><option value="abweichend">Nur abweichende Zeiten</option><option value="regulaer">Nur regulär</option></select></div>
             <div><label for="dienstplanSortierung">Sortierung</label><select id="dienstplanSortierung"><option value="standard" selected>Standard (Dienstart)</option><option value="name">Name A-Z</option><option value="beginn">Beginn der Schicht</option></select></div>
             <div><label>Schicht</label><label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanTagschicht" checked style="width:auto"> Tagschicht</label> <label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanNachtschicht" checked style="width:auto"> Nachtschicht</label></div>
             <button type="button" id="dienstplanLaden" class="secondary">Laden</button>
@@ -215,6 +215,7 @@ th{background:#f3f5f7;white-space:nowrap}
             <div class="metric"><strong id="dpSumTag">–</strong><span>Tag im Dienst, ohne Dispo (<span id="dpSumTagKrank">0</span> krank)</span><span class="dp-sub" id="dpSumTagAufteilung"></span></div>
             <div class="metric"><strong id="dpSumNacht">–</strong><span>Nacht im Dienst, ohne Dispo (<span id="dpSumNachtKrank">0</span> krank)</span><span class="dp-sub" id="dpSumNachtAufteilung"></span></div>
             <div class="metric"><strong id="dpSumDispo">–</strong><span>Dispo im Dienst: <span id="dpSumDispoTag">0</span> Tag / <span id="dpSumDispoNacht">0</span> Nacht (<span id="dpSumDispoKrank">0</span> krank)</span></div>
+            <div class="metric"><strong id="dpSumBulmor">–</strong><span>Bulmor-Fahrer:in: <span id="dpSumBulmorTag">0</span> Tag / <span id="dpSumBulmorNacht">0</span> Nacht</span></div>
             <div class="metric"><strong id="dpSumStarkAbweichend">–</strong><span>Zeiten &gt; 1 Std. vom Rest der Dienstart abweichend</span><span class="dp-sub" id="dpSumStarkAbweichendNamen"></span></div>
           </section>
           <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th>Gesamtrechnung</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
@@ -225,7 +226,7 @@ th{background:#f3f5f7;white-space:nowrap}
           <form id="dienstplanEditForm">
             <div class="grid">
               <div><label for="dpEditKrank">Krank</label><select id="dpEditKrank"><option value="false">Nein</option><option value="true">Ja</option></select></div>
-              <div><label for="dpEditBulli">Bulli-Fahrer:in</label><select id="dpEditBulli"><option value="false">Nein</option><option value="true">Ja</option></select></div>
+              <div><label for="dpEditBulli">Bulmor-Fahrer:in</label><select id="dpEditBulli"><option value="false">Nein</option><option value="true">Ja</option></select></div>
               <div><label for="dpEditBeginn">Beginn</label><input id="dpEditBeginn" type="time"></div>
               <div><label for="dpEditEnde">Ende</label><input id="dpEditEnde" type="time"></div>
               <div class="wide"><label for="dpEditNotiz">Notiz</label><input id="dpEditNotiz" maxlength="500"></div>
@@ -522,7 +523,7 @@ async function loadHeute(){
     if(!dp.length){list.append(Object.assign(document.createElement('li'),{className:'muted',textContent:'Kein Dienstplan für heute importiert.'}))}
     for(const e of dp.slice(0,8)){
       const li=document.createElement('li');
-      const status=e.ist_krank?' · krank':e.ist_bulmorfahrer?' · Bulli-Fahrer':'';
+      const status=e.ist_krank?' · krank':e.ist_bulmorfahrer?' · Bulmor-Fahrer':'';
       li.append(text(e.mitarbeiter_name),text((e.start_zeit&&e.end_zeit)?(e.start_zeit+'–'+e.end_zeit+status):(e.dienst_kategorie||'')+status));
       list.append(li);
     }
@@ -749,7 +750,7 @@ $('dienstplanImportForm').onsubmit=async e=>{
   try{
     const result=await apiUpload('/api/dienstplan/import',fd);
     if(!result.success){msg('dienstplanImportMessage','Import fehlgeschlagen: '+result.error,true);return}
-    let text=result.anzahl_eintraege+' Einträge importiert ('+result.anzahl_krank+' krank, '+result.anzahl_bulmorfahrer+' Bulli-Fahrer:in).';
+    let text=result.anzahl_eintraege+' Einträge importiert ('+result.anzahl_krank+' krank, '+result.anzahl_bulmorfahrer+' Bulmor-Fahrer:in).';
     if(result.unbekannte_dienste.length)text+=' Unbekannte Dienstkürzel: '+result.unbekannte_dienste.join(', ');
     if(result.krank_ohne_meldung&&result.krank_ohne_meldung.length)text+=' · '+result.krank_ohne_meldung.length+' krank gemeldete:r Mitarbeiter:in ohne Krankmeldung erkannt.';
     msg('dienstplanImportMessage',text);
@@ -844,6 +845,11 @@ function renderDienstplanZusammenfassung(){
   $('dpSumDispoTag').textContent=dispoTag.length;
   $('dpSumDispoNacht').textContent=dispoNacht.length;
   $('dpSumDispoKrank').textContent=relevant.filter(e=>e.ist_dispo&&e.ist_krank).length;
+  const bulmorTag=anwesend.filter(e=>e.ist_bulmorfahrer&&e.schicht_typ==='tag').length;
+  const bulmorNacht=anwesend.filter(e=>e.ist_bulmorfahrer&&e.schicht_typ==='nacht').length;
+  $('dpSumBulmor').textContent=bulmorTag+bulmorNacht;
+  $('dpSumBulmorTag').textContent=bulmorTag;
+  $('dpSumBulmorNacht').textContent=bulmorNacht;
   const aufteilung=(liste)=>{
     const z={};
     for(const e of liste){const k=e.effektive_kategorie||'sonstige';z[k]=(z[k]||0)+1}
@@ -853,7 +859,10 @@ function renderDienstplanZusammenfassung(){
   $('dpSumNachtAufteilung').textContent=aufteilung(nacht);
   const starkAbweichend=berechneStarkAbweichendeIds(dienstplanRows);
   $('dpSumStarkAbweichend').textContent=starkAbweichend.size;
-  $('dpSumStarkAbweichendNamen').textContent=starkAbweichend.size?[...starkAbweichend.values()].map(e=>e.mitarbeiter_name).sort((a,b)=>a.localeCompare(b,'de-DE')).join(' · '):'';
+  $('dpSumStarkAbweichendNamen').textContent=starkAbweichend.size?[...starkAbweichend.values()]
+    .sort((a,b)=>a.mitarbeiter_name.localeCompare(b.mitarbeiter_name,'de-DE'))
+    .map(e=>e.mitarbeiter_name+' ('+(e.schicht_typ==='nacht'?'Nacht':e.schicht_typ==='tag'?'Tag':'?')+')')
+    .join(' · '):'';
 }
 function dienstplanGefiltert(){
   const q=$('dienstplanSuche').value.trim().toLocaleLowerCase('de-DE');
@@ -891,7 +900,7 @@ function renderDienstplan(){
     cell(tr,e.mitarbeiter_name);cell(tr,e.dienst_kategorie||(e.effektive_kategorie?'(KRANK, eig. '+e.effektive_kategorie+')':'–'));cell(tr,e.start_zeit||'–');cell(tr,e.end_zeit||'–');
     const statusCell=tr.insertCell();
     if(e.ist_krank){const p=document.createElement('span');p.className='pill';p.textContent='Krank';statusCell.append(p,document.createTextNode(' '))}
-    if(e.ist_bulmorfahrer){const p=document.createElement('span');p.className='pill warn';p.textContent='Bulli-Fahrer:in';statusCell.append(p,document.createTextNode(' '))}
+    if(e.ist_bulmorfahrer){const p=document.createElement('span');p.className='pill warn';p.textContent='Bulmor-Fahrer:in';statusCell.append(p,document.createTextNode(' '))}
     if(e.zeit_abweichend){const p=document.createElement('span');p.className='pill info';p.textContent='Abweichende Zeit';statusCell.append(p,document.createTextNode(' '))}
     if(starkAbweichendIds.has(String(e.id))){const p=document.createElement('span');p.className='pill warn';p.title='Beginn oder Ende weicht um mehr als 1 Std. vom Rest der eigenen Dienstart ab.';p.textContent='> 1 Std. vom Rest abweichend';statusCell.append(p,document.createTextNode(' '))}
     if(e.virtuell){const p=document.createElement('span');p.className='pill info';p.title='Aus laufender Krankmeldung übernommen, noch kein Dienstplan für diesen Tag importiert.';p.textContent='Ohne Dienstplan';statusCell.append(p,document.createTextNode(' '))}
@@ -1009,7 +1018,7 @@ async function loadDienstplanAudit(){
   try{
     const rows=await api('/api/dienstplan/audit');
     const body=$('dienstplanAuditEntries');body.replaceChildren();
-    const feldnamen={ist_krank:'Krank',ist_bulmorfahrer:'Bulli-Fahrer:in',start_zeit:'Beginn',end_zeit:'Ende',notiz:'Notiz'};
+    const feldnamen={ist_krank:'Krank',ist_bulmorfahrer:'Bulmor-Fahrer:in',start_zeit:'Beginn',end_zeit:'Ende',notiz:'Notiz'};
     for(const r of rows){
       const tr=body.insertRow();
       cell(tr,new Date(r.event_at).toLocaleString('de-DE'));

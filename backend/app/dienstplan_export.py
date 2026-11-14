@@ -5,7 +5,7 @@ eine echte Datei abgeglichen (04_Tagesdienstpläne\\11_November\\
 Rahmen, Zahlenformate und Zusammenführungen sind 1:1 übernommen. Einzige
 bewusste Abweichung: die Fußzeile verweist auf dieses System statt (fälsch-
 licherweise) auf "CareMan-Dienstplan", da die Datei hier erzeugt wurde.
-Zellfarben für Krank (rot) und Bulli-Fahrer:in (gelb) stammen aus unserem
+Zellfarben für Krank (rot) und Bulmor-Fahrer:in (gelb) stammen aus unserem
 eigenen Datenmodell (ist_krank/ist_bulmorfahrer); die exakte Bedeutung
 einzelner, in der Originalvorlage beobachteter Sonderfarben (z. B. Grün an
 einzelnen Beginn-Zellen) ließ sich aus einer einzelnen Beispieldatei nicht

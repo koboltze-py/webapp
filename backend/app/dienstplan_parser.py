@@ -8,7 +8,7 @@ generische Erkennungslogik:
     der ersten 20 Zeilen gesucht.
   - "Krank" wird rein über den Zelltext der DIENST-Spalte erkannt (KRANK/K).
   - Gelb hinterlegte Zellen (Name- oder Dienst-Spalte) markieren
-    Bulli-Fahrer:innen (derselbe Gelb-Bereich FFFF00-FFFF4F wie in Nesk3).
+    Bulmor-Fahrer:innen (derselbe Gelb-Bereich FFFF00-FFFF4F wie in Nesk3).
   - Dienstzeiten werden aus BEGINN/ENDE gelesen (Excel-Zeitwert, datetime,
     time-Objekt oder "HH:MM"-Text).
 
@@ -53,7 +53,7 @@ BEKANNTE_KUERZEL = frozenset(SORTIER_RANG.keys())
 
 def _check_cell_color(*cell_objs: Any) -> bool:
     """True, wenn eine der übergebenen Zellen gelb hinterlegt ist
-    (Bulli-Fahrer-Markierung, Bereich FFFF00-FFFF4F wie in Nesk3)."""
+    (Bulmor-Fahrer-Markierung, Bereich FFFF00-FFFF4F wie in Nesk3)."""
     for cell_obj in cell_objs:
         fill = getattr(cell_obj, "fill", None)
         if not fill or fill.patternType not in ("solid", "solidFill"):

@@ -47,7 +47,7 @@ footer{padding:10px 40px;color:var(--muted);font-size:12px;text-align:right}
       <tbody>
         <tr><td>Im Dienstplan erfasst</td><td id="sumTotal">–</td></tr>
         <tr><td>Krank gemeldet</td><td id="sumKrank">–</td></tr>
-        <tr><td>Bulli-Fahrer:in</td><td id="sumBulli">–</td></tr>
+        <tr><td>Bulmor-Fahrer:in</td><td id="sumBulli">–</td></tr>
       </tbody>
     </table>
   </section>
@@ -73,7 +73,7 @@ async function load(){
       const c3=document.createElement('td');c3.textContent=(e.start_zeit&&e.end_zeit)?(e.start_zeit+' – '+e.end_zeit):'–';tr.append(c3);
       const c4=document.createElement('td');
       if(e.ist_krank){const p=document.createElement('span');p.className='pill krank';p.textContent='Krank';c4.append(p)}
-      if(e.ist_bulmorfahrer){const p=document.createElement('span');p.className='pill bulli';p.textContent='Bulli-Fahrer:in';c4.append(document.createTextNode(' '),p)}
+      if(e.ist_bulmorfahrer){const p=document.createElement('span');p.className='pill bulli';p.textContent='Bulmor-Fahrer:in';c4.append(document.createTextNode(' '),p)}
       tr.append(c4);
       body.append(tr);
     }
