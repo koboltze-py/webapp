@@ -218,8 +218,11 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
   Autovervollständigung aus den Mitarbeiter-Stammdaten im
   Krankmeldungs-Formular
 - Dienstplan-Krank-Popup: Wird ein Eintrag im Dienstplan auf "Krank"
-  gesetzt, erscheint ein Popup zum direkten Anlegen der passenden
-  Krankmeldung (vorausgefüllt mit Name/Datum)
+  gesetzt (manuell oder durch einen Excel-Import erkannt), erscheint ein
+  Popup zum direkten Anlegen der passenden Krankmeldung (vorausgefüllt mit
+  Name/Datum), mit der Möglichkeit, das Anlegen auch abzulehnen. Nach
+  einem Import mit mehreren noch nicht gemeldeten Krankheitsfällen werden
+  die Popups nacheinander (Warteschlange mit Zähler) angeboten.
 - Mehrtägige Krankmeldungen werden auch an Tagen ohne Excel-Import als
   schreibgeschützte "virtuelle" Dienstplan-Einträge angezeigt (Kennzeichnung
   "Ohne Dienstplan"), sodass länger andauernde Krankheiten nicht aus dem

@@ -94,6 +94,30 @@ def _virtuelle_krank_eintraege(
     return virtuelle
 
 
+def _krank_ohne_meldung(
+    eintraege: List[dict[str, Any]], tag: date, reports_repo: ReportsRepository
+) -> List[dict[str, Any]]:
+    """Ermittelt, welche am angegebenen Tag als 'Krank' importierten
+    Mitarbeitenden noch KEINE passende Krankmeldung haben (Abgleich per
+    Name + Zeitraum sick_from..sick_to). Dient dem Frontend dazu, nach
+    einem Excel-Import automatisch das Krank-Popup für genau diese
+    Personen anzubieten (dort auch ablehnbar, siehe index.html)."""
+    krank_namen = {e["mitarbeiter_name"] for e in eintraege if e.get("ist_krank") and e.get("mitarbeiter_name")}
+    if not krank_namen:
+        return []
+    reports = [_row_to_report_dict(r) for r in reports_repo.list_reports()]
+    bereits_gemeldet = {
+        _employee_zu_dienstplan_name(r["employee"]).strip().lower()
+        for r in reports
+        if r["sick_from"] <= tag <= r["sick_to"]
+    }
+    return [
+        {"mitarbeiter_name": name, "datum": tag}
+        for name in sorted(krank_namen)
+        if name.strip().lower() not in bereits_gemeldet
+    ]
+
+
 def _row_to_dict(row: Any) -> dict[str, Any]:
     if isinstance(row, dict):
         return dict(row)
@@ -180,6 +204,7 @@ def update_dienstplan_eintrag(
 async def import_dienstplan(
     datei: UploadFile,
     repo=Depends(get_dienstplan_repository),
+    reports_repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(require_schichtleitung),
 ):
     if not datei.filename or not datei.filename.lower().endswith((".xlsx", ".xlsm")):
@@ -219,5 +244,6 @@ async def import_dienstplan(
         anzahl_krank=sum(1 for e in eintraege if e["ist_krank"]),
         anzahl_bulmorfahrer=sum(1 for e in eintraege if e["ist_bulmorfahrer"]),
         unbekannte_dienste=ergebnis["unbekannte_dienste"],
+        krank_ohne_meldung=_krank_ohne_meldung(eintraege, tag, reports_repo),
     )
 

@@ -182,6 +182,14 @@ class DienstplanAuditOut(BaseModel):
     new_data: Optional[dict] = None
 
 
+class KrankOhneMeldung(BaseModel):
+    """Dienstplan-Eintrag, der als 'Krank' erkannt wurde, aber (noch) keine
+    passende Krankmeldung für diesen Tag hat (siehe routers/dienstplan.py,
+    _krank_ohne_meldung)."""
+    mitarbeiter_name: str
+    datum: date
+
+
 class DienstplanImportResult(BaseModel):
     success: bool
     datum: Optional[date] = None
@@ -189,6 +197,7 @@ class DienstplanImportResult(BaseModel):
     anzahl_krank: int = 0
     anzahl_bulmorfahrer: int = 0
     unbekannte_dienste: list[str] = []
+    krank_ohne_meldung: list[KrankOhneMeldung] = []
     error: Optional[str] = None
 
 

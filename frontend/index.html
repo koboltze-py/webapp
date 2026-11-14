@@ -231,7 +231,7 @@ th{background:#f3f5f7;white-space:nowrap}
         </section>
         <section class="card hidden" id="dienstplanKrankPopup">
           <h2>Krankmeldung anlegen für <span id="dpKrankPopupName"></span>?</h2>
-          <p class="small muted">Der Eintrag wurde gerade als "Krank" markiert. Soll dazu auch eine Krankmeldung erfasst werden?</p>
+          <p class="small muted" id="dpKrankPopupHinweis">Der Eintrag wurde gerade als "Krank" markiert. Soll dazu auch eine Krankmeldung erfasst werden?</p>
           <form id="dpKrankPopupForm">
             <div class="grid">
               <div><label for="dpKrankVon">Krank von</label><input id="dpKrankVon" type="date" required></div>
@@ -239,7 +239,7 @@ th{background:#f3f5f7;white-space:nowrap}
               <div><label for="dpKrankAngenommenVon">Angenommen von</label><input id="dpKrankAngenommenVon" maxlength="150" placeholder="Disponent"></div>
               <div class="wide"><label for="dpKrankNotiz">Bemerkungen (keine Diagnosen)</label><input id="dpKrankNotiz" maxlength="1000"></div>
             </div>
-            <div class="actions"><button type="submit">Krankmeldung anlegen</button><button type="button" id="dpKrankPopupAbbrechen" class="secondary">Nur Dienstplan (keine Krankmeldung)</button></div>
+            <div class="actions"><button type="submit">Krankmeldung anlegen</button><button type="button" id="dpKrankPopupAbbrechen" class="secondary">Ablehnen (keine Krankmeldung)</button></div>
             <p id="dpKrankPopupMessage" class="small" role="status"></p>
           </form>
         </section>
@@ -734,7 +734,7 @@ $('auditExport').onclick=()=>{
 };
 
 /* ============================= Dienstplan ============================= */
-let dienstplanRows=[],dienstplanEditingId=null,dienstplanEditingEntry=null,dienstplanKrankPopupEntry=null;
+let dienstplanRows=[],dienstplanEditingId=null,dienstplanEditingEntry=null,dienstplanKrankPopupEntry=null,dienstplanKrankPopupQueue=[];
 $('dienstplanImportForm').onsubmit=async e=>{
   e.preventDefault();
   const file=$('dienstplanDatei').files[0];
@@ -746,9 +746,14 @@ $('dienstplanImportForm').onsubmit=async e=>{
     if(!result.success){msg('dienstplanImportMessage','Import fehlgeschlagen: '+result.error,true);return}
     let text=result.anzahl_eintraege+' Einträge importiert ('+result.anzahl_krank+' krank, '+result.anzahl_bulmorfahrer+' Bulli-Fahrer:in).';
     if(result.unbekannte_dienste.length)text+=' Unbekannte Dienstkürzel: '+result.unbekannte_dienste.join(', ');
+    if(result.krank_ohne_meldung&&result.krank_ohne_meldung.length)text+=' · '+result.krank_ohne_meldung.length+' krank gemeldete:r Mitarbeiter:in ohne Krankmeldung erkannt.';
     msg('dienstplanImportMessage',text);
     $('dienstplanDatum').value=result.datum;
     await loadDienstplan();
+    if(result.krank_ohne_meldung&&result.krank_ohne_meldung.length){
+      dienstplanKrankPopupQueue=result.krank_ohne_meldung.slice(1);
+      openKrankPopup(result.krank_ohne_meldung[0],true);
+    }
   }catch(err){msg('dienstplanImportMessage','Import fehlgeschlagen: '+err.message,true)}
 };
 $('dienstplanLaden').onclick=loadDienstplan;
@@ -875,18 +880,33 @@ $('dienstplanEditForm').onsubmit=async e=>{
     await loadDienstplan();
   }catch(err){msg('dienstplanEditMessage','Speichern fehlgeschlagen: '+err.message,true)}
 };
-/* Popup: Krank-Markierung im Dienstplan -> optional direkt eine echte Krankmeldung anlegen */
-function openKrankPopup(entry){
-  const tag=$('dienstplanDatum').value||today();
+/* Popup: Krank-Markierung im Dienstplan -> optional direkt eine echte Krankmeldung anlegen.
+   Wird sowohl nach manueller Krank-Markierung als auch automatisch nach einem
+   Excel-Import für erkannte, aber noch nicht gemeldete Krankheitsfälle gezeigt
+   (dann mit ausImport=true und Warteschlange für mehrere Treffer). */
+function openKrankPopup(entry,ausImport=false){
+  const tag=entry.datum||$('dienstplanDatum').value||today();
   $('dpKrankPopupName').textContent=entry.mitarbeiter_name;
   $('dpKrankVon').value=tag;$('dpKrankBis').value=tag;
   $('dpKrankAngenommenVon').value='';$('dpKrankNotiz').value='';
-  msg('dpKrankPopupMessage','');
+  $('dpKrankPopupHinweis').textContent=ausImport
+    ?'Dieser Dienstplan-Eintrag ist als "Krank" markiert, es gibt aber noch keine passende Krankmeldung. Jetzt anlegen?'
+    :'Der Eintrag wurde gerade als "Krank" markiert. Soll dazu auch eine Krankmeldung erfasst werden?';
+  msg('dpKrankPopupMessage',dienstplanKrankPopupQueue.length?('Noch '+dienstplanKrankPopupQueue.length+' weitere:r ohne Krankmeldung.'):'');
   $('dienstplanKrankPopup').classList.remove('hidden');
   $('dienstplanKrankPopup').scrollIntoView({behavior:'smooth',block:'center'});
   dienstplanKrankPopupEntry=entry;
 }
-$('dpKrankPopupAbbrechen').onclick=()=>{dienstplanKrankPopupEntry=null;$('dienstplanKrankPopup').classList.add('hidden')};
+function dpKrankPopupWeiterOderSchliessen(){
+  if(dienstplanKrankPopupQueue.length){
+    const naechster=dienstplanKrankPopupQueue.shift();
+    openKrankPopup(naechster,true);
+  }else{
+    dienstplanKrankPopupEntry=null;
+    $('dienstplanKrankPopup').classList.add('hidden');
+  }
+}
+$('dpKrankPopupAbbrechen').onclick=()=>{dpKrankPopupWeiterOderSchliessen()};
 $('dpKrankPopupForm').onsubmit=async e=>{
   e.preventDefault();
   if(!dienstplanKrankPopupEntry)return;
@@ -903,8 +923,7 @@ $('dpKrankPopupForm').onsubmit=async e=>{
   try{
     await api('/api/reports',{method:'POST',body:JSON.stringify(payload)});
     msg('dpKrankPopupMessage','Krankmeldung angelegt.');
-    dienstplanKrankPopupEntry=null;
-    setTimeout(()=>$('dienstplanKrankPopup').classList.add('hidden'),900);
+    setTimeout(dpKrankPopupWeiterOderSchliessen,700);
   }catch(err){msg('dpKrankPopupMessage','Anlegen fehlgeschlagen: '+err.message,true)}
 };
 $('dienstplanAuditToggle').onclick=async()=>{
