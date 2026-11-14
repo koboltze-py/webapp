@@ -785,19 +785,24 @@ async function loadDienstplan(){
   }catch(err){msg('dienstplanMessage','Abruf fehlgeschlagen: '+err.message,true)}
 }
 function renderDienstplanZusammenfassung(){
-  const tag=dienstplanRows.filter(e=>e.schicht_typ==='tag'&&!e.ist_dispo);
-  const nacht=dienstplanRows.filter(e=>e.schicht_typ==='nacht'&&!e.ist_dispo);
-  const dispo=dienstplanRows.filter(e=>e.ist_dispo);
+  // Rufbereitschaft (Dienst-Kürzel "R") zählt nirgends als "im Dienst" mit.
+  const relevant=dienstplanRows.filter(e=>(e.dienst_kategorie||'').trim().toUpperCase()!=='R');
+  // Krank gemeldete Mitarbeitende sind nicht tatsächlich im Dienst -> aus der
+  // Hauptzahl herausgerechnet, aber weiterhin als "(X krank)" ausgewiesen.
+  const anwesend=relevant.filter(e=>!e.ist_krank);
+  const tag=anwesend.filter(e=>e.schicht_typ==='tag'&&!e.ist_dispo);
+  const nacht=anwesend.filter(e=>e.schicht_typ==='nacht'&&!e.ist_dispo);
+  const dispo=anwesend.filter(e=>e.ist_dispo);
   const dispoTag=dispo.filter(e=>e.schicht_typ==='tag');
   const dispoNacht=dispo.filter(e=>e.schicht_typ==='nacht');
   $('dpSumTag').textContent=tag.length;
-  $('dpSumTagKrank').textContent=tag.filter(e=>e.ist_krank).length;
+  $('dpSumTagKrank').textContent=relevant.filter(e=>e.schicht_typ==='tag'&&!e.ist_dispo&&e.ist_krank).length;
   $('dpSumNacht').textContent=nacht.length;
-  $('dpSumNachtKrank').textContent=nacht.filter(e=>e.ist_krank).length;
+  $('dpSumNachtKrank').textContent=relevant.filter(e=>e.schicht_typ==='nacht'&&!e.ist_dispo&&e.ist_krank).length;
   $('dpSumDispo').textContent=dispo.length;
   $('dpSumDispoTag').textContent=dispoTag.length;
   $('dpSumDispoNacht').textContent=dispoNacht.length;
-  $('dpSumDispoKrank').textContent=dispo.filter(e=>e.ist_krank).length;
+  $('dpSumDispoKrank').textContent=relevant.filter(e=>e.ist_dispo&&e.ist_krank).length;
 }
 function dienstplanGefiltert(){
   const q=$('dienstplanSuche').value.trim().toLocaleLowerCase('de-DE');
