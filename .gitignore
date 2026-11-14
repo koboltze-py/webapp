@@ -15,6 +15,11 @@ Backups/Supabase/*/
 Backups/App/*/
 !Backups/App/LIESMICH.txt
 
+# Automatische Dienstplan-Schnappschüsse bei jedem Import/jeder Änderung
+# (enthalten Mitarbeiternamen/Dienstzeiten, siehe Backups/Tagesdienstpläne/LIESMICH.txt)
+Backups/Tagesdienstpläne/*/
+!Backups/Tagesdienstpläne/LIESMICH.txt
+
 # Technische Dokumentation als Backup-Snapshot (lokales Nachschlagewerk,
 # nicht Teil des Versionsverlaufs)
 Backups/Mds/

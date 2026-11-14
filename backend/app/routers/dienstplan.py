@@ -27,6 +27,10 @@ from ..schemas import (
 
 router = APIRouter(prefix="/api/dienstplan", tags=["dienstplan"])
 
+# backend/app/routers/dienstplan.py -> routers -> app -> backend -> Projektordner
+PROJEKT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+TAGESDIENSTPLAN_BACKUP_DIR = PROJEKT_ROOT / "Backups" / "Tagesdienstpläne"
+
 # Für die virtuelle Krank-Überlagerung (siehe _virtuelle_krank_eintraege)
 # maximal betrachteter Zeitraum, um ausufernde Schleifen bei sehr großen
 # von/bis-Bereichen zu vermeiden.
@@ -129,6 +133,35 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     }
 
 
+def _tagesdaten_sortiert(
+    tag: date, repo: Any, reports_repo: ReportsRepository
+) -> List[dict[str, Any]]:
+    rows = [_row_to_dict(r) for r in repo.list_eintraege(tag, tag)]
+    rows.extend(_virtuelle_krank_eintraege(repo, reports_repo, tag, tag))
+    return kategorisiere_und_sortiere(rows)
+
+
+def _sichere_tagesdienstplan_snapshot(
+    tag: date, repo: Any, reports_repo: ReportsRepository, ersteller: str
+) -> None:
+    """Speichert bei jedem Import und jeder manuellen Änderung automatisch
+    eine Excel-Kopie des betroffenen Tages unter
+    Backups/Tagesdienstpläne/<Datum>/<Datum>_<Uhrzeit>.xlsx - rein
+    informativ/als Verlauf gedacht, ein Fehler hierbei darf die eigentliche
+    Import-/Änderungs-Operation nicht verhindern."""
+    try:
+        rows = _tagesdaten_sortiert(tag, repo, reports_repo)
+        if not rows:
+            return
+        inhalt = export_dienstplan_excel(tag, rows, ersteller=ersteller)
+        tag_ordner = TAGESDIENSTPLAN_BACKUP_DIR / tag.strftime("%d.%m.%Y")
+        tag_ordner.mkdir(parents=True, exist_ok=True)
+        dateiname = f"{tag.strftime('%d.%m.%Y')}_{datetime.now().strftime('%H-%M-%S')}.xlsx"
+        (tag_ordner / dateiname).write_bytes(inhalt)
+    except Exception:  # noqa: BLE001 - Backup ist best-effort, darf Hauptvorgang nicht stoeren
+        pass
+
+
 @router.get("", response_model=List[DienstplanEintragOut])
 def list_dienstplan(
     von: Optional[date] = None,
@@ -156,18 +189,18 @@ def get_quelle(
 @router.get("/export")
 def export_dienstplan(
     datum: date,
+    request: Request,
     repo=Depends(get_dienstplan_repository),
     reports_repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(get_current_role),
 ):
-    """Gibt den Dienstplan eines Tages als Excel-Datei zurück (angelehnt an
-    die Original-Tagesdienstplan-Vorlage, siehe dienstplan_export.py)."""
-    rows = [_row_to_dict(r) for r in repo.list_eintraege(datum, datum)]
-    rows.extend(_virtuelle_krank_eintraege(repo, reports_repo, datum, datum))
-    if not rows:
+    """Gibt den Dienstplan eines Tages als Excel-Datei zurück (identisch zum
+    Format der echten Tagesdienstplan-Vorlage, siehe dienstplan_export.py)."""
+    sortierte_rows = _tagesdaten_sortiert(datum, repo, reports_repo)
+    if not sortierte_rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Für diesen Tag liegen keine Dienstplan-Daten vor.")
-    sortierte_rows = kategorisiere_und_sortiere(rows)
-    inhalt = export_dienstplan_excel(datum, sortierte_rows)
+    actor_username = request.session.get("username", role)
+    inhalt = export_dienstplan_excel(datum, sortierte_rows, ersteller=actor_username)
     dateiname = f"Dienstplan_{datum.strftime('%d.%m.%Y')}.xlsx"
     return Response(
         content=inhalt,
@@ -190,6 +223,7 @@ def update_dienstplan_eintrag(
     payload: DienstplanEintragUpdate,
     request: Request,
     repo=Depends(get_dienstplan_repository),
+    reports_repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(require_schichtleitung),
 ):
     data = payload.model_dump(exclude_unset=True, exclude_none=True)
@@ -197,12 +231,15 @@ def update_dienstplan_eintrag(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Keine Änderungen übermittelt.")
     actor_username = request.session.get("username", role)
     row = repo.update_eintrag(eintrag_id, data, role, actor_username)
-    return kategorisiere_und_sortiere([_row_to_dict(row)])[0]
+    ergebnis = kategorisiere_und_sortiere([_row_to_dict(row)])[0]
+    _sichere_tagesdienstplan_snapshot(ergebnis["datum"], repo, reports_repo, actor_username)
+    return ergebnis
 
 
 @router.post("/import", response_model=DienstplanImportResult)
 async def import_dienstplan(
     datei: UploadFile,
+    request: Request,
     repo=Depends(get_dienstplan_repository),
     reports_repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(require_schichtleitung),
@@ -236,6 +273,8 @@ async def import_dienstplan(
         for e in ergebnis["eintraege"]
     ]
     repo.replace_tag(tag, eintraege, datei.filename)
+    actor_username = request.session.get("username", role)
+    _sichere_tagesdienstplan_snapshot(tag, repo, reports_repo, actor_username)
 
     return DienstplanImportResult(
         success=True,
