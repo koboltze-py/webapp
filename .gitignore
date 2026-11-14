@@ -10,6 +10,15 @@ backend/data/*.sqlite3
 Backups/Supabase/*/
 !Backups/Supabase/LIESMICH.txt
 
+# Vollständige Software-Backups (enthalten backend/.env + lokale Datenbank
+# mit Gesundheitsdaten, siehe Backups/App/LIESMICH.txt)
+Backups/App/*/
+!Backups/App/LIESMICH.txt
+
+# Technische Dokumentation als Backup-Snapshot (lokales Nachschlagewerk,
+# nicht Teil des Versionsverlaufs)
+Backups/Mds/
+
 # Supabase-Konfiguration (enthält private E-Mail-Adressen) - siehe config.example.json
 Supabase-Sicherung/config.json
 
