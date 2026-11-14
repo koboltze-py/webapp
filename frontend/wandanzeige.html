@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1B2230">
+<title>DRK FKB | Wandanzeige</title>
+<style>
+:root{font-family:'Inter',system-ui,-apple-system,"Segoe UI",sans-serif;--ink:#1B2230;--bg:#0f1420;--card:#1b2333;--border:#2b3650;--muted:#8891a6}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#fff;min-height:100vh;display:flex;flex-direction:column}
+header{padding:28px 40px;display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--border)}
+header h1{margin:0;font-size:28px}
+header .datum{font-size:20px;color:var(--muted)}
+main{flex:1;padding:32px 40px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:22px}
+.panel h2{margin:0 0 16px;font-size:18px;color:var(--muted);font-weight:650;text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-size:18px}
+th,td{text-align:left;padding:10px 6px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase}
+.pill{display:inline-block;padding:4px 10px;border-radius:99px;font-size:13px;font-weight:700}
+.pill.krank{background:#5a1f24;color:#ffb3ba}
+.pill.bulli{background:#5a4a12;color:#ffe08a}
+.empty{color:var(--muted);font-size:16px;padding:12px 0}
+.hidden{display:none!important}
+footer{padding:10px 40px;color:var(--muted);font-size:12px;text-align:right}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>DRK FKB · Erste-Hilfe-Station Flughafen</h1>
+  <div class="datum" id="datum">–</div>
+</header>
+<main>
+  <section class="panel">
+    <h2>Dienstplan heute</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Dienst</th><th>Zeit</th><th>Status</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="empty hidden" id="emptyMsg">Für heute wurde noch kein Dienstplan importiert.</p>
+  </section>
+  <section class="panel">
+    <h2>Zusammenfassung</h2>
+    <table>
+      <tbody>
+        <tr><td>Im Dienstplan erfasst</td><td id="sumTotal">–</td></tr>
+        <tr><td>Krank gemeldet</td><td id="sumKrank">–</td></tr>
+        <tr><td>Bulli-Fahrer:in</td><td id="sumBulli">–</td></tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+<footer>Aktualisiert automatisch alle 60 Sekunden · <span id="lastUpdate"></span></footer>
+<script type="module">
+function fmtDatum(iso){
+  const d=new Date(iso+'T00:00:00');
+  return d.toLocaleDateString('de-DE',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'});
+}
+async function load(){
+  try{
+    const res=await fetch('/api/wandanzeige/heute');
+    const data=await res.json();
+    document.getElementById('datum').textContent=fmtDatum(data.datum);
+    const body=document.getElementById('rows');
+    body.replaceChildren();
+    document.getElementById('emptyMsg').classList.toggle('hidden', data.eintraege.length>0);
+    for(const e of data.eintraege){
+      const tr=document.createElement('tr');
+      const c1=document.createElement('td');c1.textContent=e.mitarbeiter_name;tr.append(c1);
+      const c2=document.createElement('td');c2.textContent=e.dienst_kategorie||'–';tr.append(c2);
+      const c3=document.createElement('td');c3.textContent=(e.start_zeit&&e.end_zeit)?(e.start_zeit+' – '+e.end_zeit):'–';tr.append(c3);
+      const c4=document.createElement('td');
+      if(e.ist_krank){const p=document.createElement('span');p.className='pill krank';p.textContent='Krank';c4.append(p)}
+      if(e.ist_bulmorfahrer){const p=document.createElement('span');p.className='pill bulli';p.textContent='Bulli-Fahrer:in';c4.append(document.createTextNode(' '),p)}
+      tr.append(c4);
+      body.append(tr);
+    }
+    document.getElementById('sumTotal').textContent=data.eintraege.length;
+    document.getElementById('sumKrank').textContent=data.anzahl_krank;
+    document.getElementById('sumBulli').textContent=data.anzahl_bulmorfahrer;
+    document.getElementById('lastUpdate').textContent=new Date().toLocaleTimeString('de-DE');
+  }catch(e){
+    document.getElementById('lastUpdate').textContent='Fehler beim Laden.';
+  }
+}
+load();
+setInterval(load,60000);
+</script>
+</body>
+</html>
