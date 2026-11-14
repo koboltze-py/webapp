@@ -3,5 +3,6 @@
   "supabase_anon_key": "YOUR-PUBLISHABLE-ANON-KEY",
   "login_email_disposition": "disposition@example.com",
   "login_email_admin": "admin@example.com",
+  "login_email_mitarbeiter": "mitarbeiter@example.com",
   "backup_root": "../Backups/Supabase"
 }

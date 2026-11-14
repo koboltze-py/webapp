@@ -17,8 +17,58 @@ from .config import settings
 
 REPORTS_TABLE = "sick_reports"
 AUDIT_TABLE = "sick_report_audit"
+BENUTZER_TABLE = "benutzer"
+MITARBEITER_TABLE = "mitarbeiter"
+DIENSTPLAN_TABLE = "dienstplan"
+MELDUNGEN_TABLE = "meldungen"
 
 _TIMEOUT = 30
+
+# Zwischengespeicherte Zugriffstoken der drei festen Rollenstufen-Konten
+# (admin/schichtleitung/mitarbeiter). Diese Konten gehören dem Backend selbst
+# (Zugangsdaten in .env, siehe config.py) - einzelne Mitarbeitende melden sich
+# mit ihrem eigenen Login an (benutzer-Tabelle), nicht mit diesen Konten.
+_tier_tokens: dict[str, dict[str, str]] = {}
+
+
+def get_tier_access_token(tier: str) -> str:
+    """Liefert ein gültiges Zugriffstoken für das Service-Konto einer
+    Rollenstufe, meldet bei Bedarf neu an."""
+    cached = _tier_tokens.get(tier)
+    if cached:
+        return cached["access_token"]
+    return _sign_in_tier(tier)["access_token"]
+
+
+def refresh_tier_access_token(tier: str) -> str:
+    """Erneuert das Zugriffstoken einer Rollenstufe (nach Ablauf)."""
+    cached = _tier_tokens.get(tier)
+    if cached and cached.get("refresh_token"):
+        try:
+            tokens = refresh_session(cached["refresh_token"])
+            _tier_tokens[tier] = tokens
+            return tokens["access_token"]
+        except SupabaseError:
+            pass
+    return _sign_in_tier(tier)["access_token"]
+
+
+def _sign_in_tier(tier: str) -> dict[str, str]:
+    email = settings.tier_email(tier)
+    password = settings.tier_service_password(tier)
+    if not email or not password:
+        raise SupabaseError(f"Service-Konto für Rollenstufe '{tier}' ist nicht konfiguriert.")
+    tokens = sign_in(email, password)
+    _tier_tokens[tier] = tokens
+    return tokens
+
+
+def seed_tier_token(tier: str, tokens: dict[str, str]) -> None:
+    """Übernimmt ein frisch erhaltenes Zugriffstoken (z. B. aus dem
+    Legacy-Login mit menschlich eingetipptem Passwort) in den
+    Rollenstufen-Zwischenspeicher, damit andere Anfragen derselben Rolle es
+    mitbenutzen können, ohne ein eigenes Service-Passwort zu benötigen."""
+    _tier_tokens[tier] = tokens
 
 
 class SupabaseError(RuntimeError):

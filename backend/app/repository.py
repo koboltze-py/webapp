@@ -24,6 +24,7 @@ from fastapi import HTTPException, Request, status
 from . import supabase_client as sb
 from .config import settings
 from .database import SessionLocal
+from .deps import session_tier
 from .models import AuditLog, SickReport
 
 REPORT_FIELDS = (
@@ -173,46 +174,27 @@ class SqliteReportsRepository:
 
 
 class SupabaseReportsRepository:
-    """Dauerhafte Anbindung: Daten liegen in Supabase (Postgres), Zugriff
-    genau wie bei der alten Webseite mit dem anon-Key + dem persönlichen
-    Zugriffstoken aus dem Login (siehe routers/auth.py). Row-Level-Security
-    in Supabase entscheidet serverseitig, was je Rolle sichtbar/änderbar ist."""
+    """Dauerhafte Anbindung: Daten liegen in Supabase (Postgres). Der Zugriff
+    läuft über das feste Service-Konto der aktuellen Rollenstufe (admin/
+    schichtleitung/mitarbeiter), siehe supabase_client.get_tier_access_token
+    und deps.session_tier - Row-Level-Security in Supabase entscheidet
+    serverseitig, was je Rolle sichtbar/änderbar ist."""
 
     def __init__(self, request: Request):
         self.request = request
 
-    def _token(self) -> str:
-        token = self.request.session.get("supabase_access_token")
-        if not token:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nicht angemeldet.")
-        return token
-
-    def _refresh(self) -> None:
-        refresh_token = self.request.session.get("supabase_refresh_token")
-        if not refresh_token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Sitzung abgelaufen, bitte erneut anmelden.",
-            )
-        try:
-            tokens = sb.refresh_session(refresh_token)
-        except sb.SupabaseError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Sitzung abgelaufen, bitte erneut anmelden.",
-            )
-        self.request.session["supabase_access_token"] = tokens["access_token"]
-        self.request.session["supabase_refresh_token"] = tokens["refresh_token"]
+    def _tier(self) -> str:
+        return session_tier(self.request)
 
     def _call(self, func, *args, **kwargs):
-        """Ruft eine supabase_client-Funktion mit dem aktuellen Zugriffstoken
-        auf; bei abgelaufenem Token wird einmalig per refresh_token erneuert
-        und der Aufruf wiederholt."""
+        """Ruft eine supabase_client-Funktion mit dem Zugriffstoken der
+        aktuellen Rollenstufe auf; bei abgelaufenem Token wird einmalig
+        erneuert und der Aufruf wiederholt."""
+        tier = self._tier()
         try:
-            return func(*args, access_token=self._token(), **kwargs)
+            return func(*args, access_token=sb.get_tier_access_token(tier), **kwargs)
         except sb.SupabaseAuthExpired:
-            self._refresh()
-            return func(*args, access_token=self._token(), **kwargs)
+            return func(*args, access_token=sb.refresh_tier_access_token(tier), **kwargs)
 
     def _write_audit(self, *, action: str, report_id, old_data, new_data, actor_role: str) -> None:
         try:

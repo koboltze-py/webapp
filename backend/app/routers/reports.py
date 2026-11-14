@@ -12,7 +12,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, status
 
-from ..deps import get_current_role, require_admin
+from ..deps import get_current_role, require_admin, require_schichtleitung
 from ..repository import ReportsRepository, get_reports_repository
 from ..schemas import CaremanUpdate, ReportCreate, ReportOut, ReportUpdate
 
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 @router.get("", response_model=List[ReportOut])
 def list_reports(
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(get_current_role),
+    role: str = Depends(require_schichtleitung),
 ):
     return repo.list_reports()
 
@@ -31,7 +31,7 @@ def list_reports(
 def create_report(
     payload: ReportCreate,
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(get_current_role),
+    role: str = Depends(require_schichtleitung),
 ):
     return repo.create_report(payload.model_dump(), role)
 
@@ -41,7 +41,7 @@ def update_report(
     report_id: str,
     payload: ReportUpdate,
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(get_current_role),
+    role: str = Depends(require_schichtleitung),
 ):
     return repo.update_report(report_id, payload.model_dump(), role)
 
@@ -60,7 +60,7 @@ def toggle_careman(
 def delete_report(
     report_id: str,
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(get_current_role),
+    role: str = Depends(require_schichtleitung),
 ):
     repo.delete_report(report_id, role)
     return {"ok": True}

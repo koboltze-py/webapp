@@ -121,16 +121,55 @@ Einmalige Einrichtung in Supabase (SQL Editor des Projekts):
 Danach Backend neu starten (`start_app.bat`) - keine weiteren Code- oder
 `.env`-Änderungen nötig (siehe `backend\app\repository.py`).
 
-## 3. Funktionsumfang (identisch zum Original)
+### Einzel-Logins für Mitarbeitende (neu, zusätzlich zu den Sammel-Logins)
 
-- Krankmeldung erfassen, bearbeiten, löschen
+Die bisherigen Sammel-Logins ADMIN/DRKFKB bleiben bestehen. Zusätzlich gibt
+es jetzt eigene Logins je Mitarbeiter:in mit drei Rollenstufen
+(`mitarbeiter` < `schichtleitung` < `admin`). Angelegt werden diese Logins
+über `POST /api/benutzer` (Admin-Rolle), vorgesehen für das geplante
+Desktop-GUI-Tool.
+
+Einmalige Einrichtung in Supabase (SQL Editor, **in dieser Reihenfolge**):
+
+1. In Supabase Auth (Dashboard → Authentication → Users) ein drittes Konto
+   für die Rollenstufe „Mitarbeiter" anlegen (beliebige E-Mail/Passwort).
+2. In den SQL-Dateien `benutzer.sql`, `mitarbeiter.sql`, `dienstplan.sql`,
+   `meldungen.sql` (Ordner `Supabase-Sicherung\sql`) den Platzhalter
+   `MITARBEITER-EMAIL-HIER-EINTRAGEN` durch die neue E-Mail ersetzen, sowie
+   in `benutzer.sql` den Platzhalter `ADMIN-EMAIL-HIER-EINTRAGEN` durch die
+   E-Mail des bestehenden Admin-Kontos (siehe `login_email_admin` in
+   `Supabase-Sicherung\config.json`).
+3. Alle vier Dateien ausführen, danach `upgrade_audit_rollenstufen.sql`.
+4. `Supabase-Sicherung\config.json` um `"login_email_mitarbeiter"` ergänzen
+   (siehe `config.example.json`).
+5. In `backend\.env` die drei Service-Passwörter eintragen, mit denen sich
+   das Backend selbst (nicht die Mitarbeitenden) bei Bedarf bei Supabase
+   anmeldet: `TIER_SERVICE_PASSWORD_ADMIN`, `TIER_SERVICE_PASSWORD_SCHICHTLEITUNG`
+   (Passwörter der beiden bestehenden Konten), `TIER_SERVICE_PASSWORD_MITARBEITER`
+   (Passwort des neuen dritten Kontos).
+
+Ohne diese Einrichtung funktionieren die Sammel-Logins unverändert weiter;
+Einzel-Logins beantworten den Login-Versuch dann mit „Service-Konten
+fehlen" (HTTP 503). Solange die Einzel-Logins noch nicht vollständig
+eingerichtet sind, landet die Benutzerverwaltung (`benutzer`-Tabelle)
+automatisch in der lokalen SQLite-Datenbank statt in Supabase.
+
+## 3. Funktionsumfang
+
+- Krankmeldung erfassen, bearbeiten, löschen (Rollenstufen Schichtleitung/Admin)
 - Übersicht mit Filtern (Heute/Gestern/Monat/Zeitraum/Mitarbeitersuche)
-- Rollen **Disposition** (Tagesgeschäft) und **Admin** (zusätzlich
-  Careman-Status setzen/umschalten und Änderungsprotokoll einsehen)
+- Rollenstufen **Mitarbeiter** (eigene Module), **Schichtleitung**
+  (operative Module, entspricht der bisherigen Disposition-Rolle) und
+  **Admin** (zusätzlich Careman-Status, Änderungsprotokoll,
+  Benutzerverwaltung)
 - CSV-Export der aktuellen Ansicht sowie des Änderungsprotokolls
 - Änderungsprotokoll: jede Anlage/Änderung/Löschung wird mit
   Vorher-/Nachher-Werten gespeichert und bleibt auch nach Löschung
   eines Eintrags erhalten (nur für Admin sichtbar)
+- Personal-Stammdaten (`/api/mitarbeiter`), Dienstplan-Excel-Import
+  (`/api/dienstplan/import`, erkennt Krank-Meldungen und gelb markierte
+  Bulli-Fahrer:innen wie im Nesk3-Projekt) und ein allgemeines
+  Mitteilungsboard (`/api/meldungen`)
 
 ## 4. Supabase-Sicherung (GUI-Werkzeug)
 

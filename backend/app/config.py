@@ -26,11 +26,22 @@ if not ENV_PATH.exists():
         "ADMIN_USERNAME=ADMIN\n"
         "DISPOSITION_USERNAME=DRKFKB\n"
         "ADMIN_PASSWORD=BitteAendern123\n"
-        "DISPOSITION_PASSWORD=Disposition\n",
+        "DISPOSITION_PASSWORD=Disposition\n"
+        "# Nur für Einzel-Logins mit aktiver Supabase-Anbindung nötig, siehe\n"
+        "# README.md Abschnitt \"Einzel-Logins für Mitarbeitende\":\n"
+        "# TIER_SERVICE_PASSWORD_ADMIN=\n"
+        "# TIER_SERVICE_PASSWORD_SCHICHTLEITUNG=\n"
+        "# TIER_SERVICE_PASSWORD_MITARBEITER=\n",
         encoding="utf-8",
     )
 
 load_dotenv(ENV_PATH)
+
+# Rollenstufen für die neuen Einzel-Logins (Benutzer-Tabelle). Die bisherigen
+# zwei geteilten Logins (ADMIN/DRKFKB) bleiben als Legacy-Zugang erhalten,
+# siehe routers/auth.py. "admin" entspricht dem bisherigen Admin-Konto,
+# "schichtleitung" dem bisherigen Disposition-Konto, "mitarbeiter" ist neu.
+TIER_ROLES = ("mitarbeiter", "schichtleitung", "admin")
 
 # Dauerhafte Supabase-Anbindung: verwendet dieselbe Konfigurationsdatei wie
 # das Supabase-Sicherungs-Werkzeug (Project URL + oeffentlicher anon-Key,
@@ -62,6 +73,19 @@ class Settings:
     supabase_anon_key: str = _supabase_config.get("supabase_anon_key", "")
     supabase_login_email_admin: str = _supabase_config.get("login_email_admin", "")
     supabase_login_email_disposition: str = _supabase_config.get("login_email_disposition", "")
+    # Drittes Konto für die neue Rollenstufe "mitarbeiter" (Einzel-Logins).
+    # Muss einmalig in Supabase Auth angelegt werden, siehe README.md.
+    supabase_login_email_mitarbeiter: str = _supabase_config.get("login_email_mitarbeiter", "")
+
+    # Feste Zugangsdaten, mit denen das BACKEND selbst (nicht der Mensch im
+    # Browser) sich bei Bedarf als eine der drei Rollenstufen bei Supabase
+    # anmeldet - nötig, seit einzelne Mitarbeitende ihr eigenes Passwort
+    # haben (siehe routers/auth.py + benutzer-Tabelle) und nicht mehr direkt
+    # das Passwort des geteilten Supabase-Kontos eintippen. Kein
+    # Service-Role-Key, nur normale Supabase-Auth-Konten mit RLS.
+    tier_service_password_admin: str = os.getenv("TIER_SERVICE_PASSWORD_ADMIN", "")
+    tier_service_password_schichtleitung: str = os.getenv("TIER_SERVICE_PASSWORD_SCHICHTLEITUNG", "")
+    tier_service_password_mitarbeiter: str = os.getenv("TIER_SERVICE_PASSWORD_MITARBEITER", "")
 
     @property
     def supabase_enabled(self) -> bool:
@@ -70,6 +94,28 @@ class Settings:
             and self.supabase_anon_key
             and self.supabase_login_email_admin
             and self.supabase_login_email_disposition
+        )
+
+    def tier_email(self, tier: str) -> str:
+        return {
+            "admin": self.supabase_login_email_admin,
+            "schichtleitung": self.supabase_login_email_disposition,
+            "mitarbeiter": self.supabase_login_email_mitarbeiter,
+        }.get(tier, "")
+
+    def tier_service_password(self, tier: str) -> str:
+        return {
+            "admin": self.tier_service_password_admin,
+            "schichtleitung": self.tier_service_password_schichtleitung,
+            "mitarbeiter": self.tier_service_password_mitarbeiter,
+        }.get(tier, "")
+
+    @property
+    def individual_login_enabled(self) -> bool:
+        """True, sobald für alle drei Rollenstufen sowohl das Supabase-Konto
+        (E-Mail) als auch das zugehörige Service-Passwort hinterlegt sind."""
+        return self.supabase_enabled and all(
+            self.tier_email(tier) and self.tier_service_password(tier) for tier in TIER_ROLES
         )
 
 

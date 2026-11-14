@@ -14,7 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
 from .database import Base, engine
-from .routers import audit, auth, reports
+from .routers import audit, auth, benutzer, dienstplan, meldungen, mitarbeiter, reports, wandanzeige
 
 if not settings.supabase_enabled:
     Base.metadata.create_all(bind=engine)
@@ -32,6 +32,11 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(reports.router)
 app.include_router(audit.router)
+app.include_router(mitarbeiter.router)
+app.include_router(dienstplan.router)
+app.include_router(meldungen.router)
+app.include_router(benutzer.router)
+app.include_router(wandanzeige.router)
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
