@@ -129,21 +129,31 @@ Danach Backend neu starten (`start_app.bat`) - keine weiteren Code- oder
 
 Die bisherigen Sammel-Logins ADMIN/DRKFKB bleiben bestehen. Zusätzlich gibt
 es jetzt eigene Logins je Mitarbeiter:in mit drei Rollenstufen
-(`mitarbeiter` < `schichtleitung` < `admin`). Angelegt werden diese Logins
-über `POST /api/benutzer` (Admin-Rolle), vorgesehen für das geplante
-Desktop-GUI-Tool.
+(`mitarbeiter` < `schichtleitung` < `admin`), sowie die neuen Module
+Mitarbeiter-Stammdaten, Dienstplan-Import und Meldungen. Angelegt werden
+die Logins über `POST /api/benutzer` bzw. das `Verwaltungstool` (Admin-Rolle).
 
-Einmalige Einrichtung in Supabase (SQL Editor, **in dieser Reihenfolge**):
+**Wichtig:** Ohne die folgende einmalige Einrichtung funktionieren diese
+neuen Module nicht (Fehler „Could not find the table … in the schema
+cache“ im Server-Fenster) – die Sammel-Logins und Krankmeldungen laufen
+aber unverändert weiter.
+
+Einmalige Einrichtung in Supabase:
 
 1. In Supabase Auth (Dashboard → Authentication → Users) ein drittes Konto
-   für die Rollenstufe „Mitarbeiter" anlegen (beliebige E-Mail/Passwort).
-2. In den SQL-Dateien `benutzer.sql`, `mitarbeiter.sql`, `dienstplan.sql`,
-   `meldungen.sql` (Ordner `Supabase-Sicherung\sql`) den Platzhalter
-   `MITARBEITER-EMAIL-HIER-EINTRAGEN` durch die neue E-Mail ersetzen, sowie
-   in `benutzer.sql` den Platzhalter `ADMIN-EMAIL-HIER-EINTRAGEN` durch die
-   E-Mail des bestehenden Admin-Kontos (siehe `login_email_admin` in
-   `Supabase-Sicherung\config.json`).
-3. Alle vier Dateien ausführen, danach `upgrade_audit_rollenstufen.sql`.
+   für die Rollenstufe „Mitarbeiter" anlegen (beliebige E-Mail/Passwort,
+   z. B. `mitarbeiter@fkb.local`).
+2. `Supabase-Sicherung\sql\00_setup_alle_neuen_module.sql` öffnen, darin
+   **alle 4 Vorkommen** von `MITARBEITER-EMAIL-HIER-EINTRAGEN` durch die
+   neue E-Mail aus Schritt 1 ersetzen (Suchen&Ersetzen). Die beiden
+   bestehenden Konten (`dpfkb@gmx.de` / `bauschke.info@icloud.com`) sind
+   bereits eingetragen.
+3. Das komplette Skript einmal im SQL Editor des Supabase-Projekts
+   ausführen (legt alle vier neuen Tabellen + Rechte an und erweitert die
+   Rollenbezeichnung im Änderungsprotokoll). Die einzelnen Dateien
+   (`benutzer.sql`, `mitarbeiter.sql`, `dienstplan.sql`, `meldungen.sql`,
+   `upgrade_audit_rollenstufen.sql`) enthalten denselben Inhalt einzeln,
+   falls das lieber Schritt für Schritt gemacht werden soll.
 4. `Supabase-Sicherung\config.json` um `"login_email_mitarbeiter"` ergänzen
    (siehe `config.example.json`).
 5. In `backend\.env` die drei Service-Passwörter eintragen, mit denen sich
@@ -151,6 +161,7 @@ Einmalige Einrichtung in Supabase (SQL Editor, **in dieser Reihenfolge**):
    anmeldet: `TIER_SERVICE_PASSWORD_ADMIN`, `TIER_SERVICE_PASSWORD_SCHICHTLEITUNG`
    (Passwörter der beiden bestehenden Konten), `TIER_SERVICE_PASSWORD_MITARBEITER`
    (Passwort des neuen dritten Kontos).
+6. Backend neu starten (`start_app.bat`).
 
 Ohne diese Einrichtung funktionieren die Sammel-Logins unverändert weiter;
 Einzel-Logins beantworten den Login-Versuch dann mit „Service-Konten

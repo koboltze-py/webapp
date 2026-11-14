@@ -40,12 +40,9 @@ create policy "fkb_read_benutzer" on public.benutzer for select to authenticated
   ));
 
 -- Anlegen/Ändern von Logins ist Admin-Aufgabe (zusätzlich serverseitig in
--- routers/benutzer.py über require_admin erzwungen). HIER die E-Mail des
--- ADMIN-Kontos eintragen (nicht Disposition!) - welche der beiden
--- bestehenden E-Mails das ist, steht in Supabase-Sicherung\config.json
--- unter "login_email_admin".
+-- routers/benutzer.py über require_admin erzwungen).
 create policy "fkb_write_benutzer" on public.benutzer for insert to authenticated
-  with check ((select auth.jwt()->>'email') = 'ADMIN-EMAIL-HIER-EINTRAGEN');
+  with check ((select auth.jwt()->>'email') = 'bauschke.info@icloud.com');
 
 create policy "fkb_update_benutzer" on public.benutzer for update to authenticated
-  using ((select auth.jwt()->>'email') = 'ADMIN-EMAIL-HIER-EINTRAGEN');
+  using ((select auth.jwt()->>'email') = 'bauschke.info@icloud.com');
