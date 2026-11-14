@@ -215,24 +215,13 @@ def _parse_supabase_timestamp(value: str | None) -> str | None:
         return value
 
 
-def import_supabase_data_to_local(base_url: str, anon_key: str, access_token: str, log) -> dict[str, int]:
-    """Lädt sick_reports + sick_report_audit aus Supabase und fügt sie der
-    lokalen SQLite-Datenbank hinzu (einmaliger Umstieg, siehe README.md).
-    Vorhandene lokale Einträge bleiben erhalten, es werden nur neue Zeilen
-    angehängt (keine Duplikat-Prüfung - für einen einmaligen Umzug gedacht)."""
+def insert_sick_data_into_local_db(reports: list[dict], audit_rows: list[dict], log) -> dict[str, int]:
+    """Fügt Krankmeldungen + Änderungsprotokoll (im Supabase-Zeilenformat,
+    z. B. aus einer REST-Antwort oder aus einem Backup-JSON) der lokalen
+    SQLite-Datenbank hinzu. Vorhandene lokale Einträge bleiben erhalten, es
+    werden nur neue Zeilen angehängt (keine Duplikat-Prüfung - für einen
+    einmaligen Umzug/Wiederherstellung gedacht)."""
     counts = {"sick_reports": 0, "sick_report_audit": 0}
-
-    log("Lade Krankmeldungen von Supabase …")
-    reports = supabase_fetch_all(base_url, anon_key, access_token, "sick_reports")
-    log(f"  -> {len(reports)} Krankmeldung(en) gefunden.")
-
-    audit_rows: list[dict] = []
-    try:
-        log("Lade Änderungsprotokoll von Supabase …")
-        audit_rows = supabase_fetch_all(base_url, anon_key, access_token, "sick_report_audit")
-        log(f"  -> {len(audit_rows)} Protokolleintrag/Protokolleinträge gefunden.")
-    except FileNotFoundError as e:
-        log(f"  -> Übersprungen: {e}")
 
     LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(LOCAL_DB_PATH)
@@ -319,6 +308,53 @@ def import_supabase_data_to_local(base_url: str, anon_key: str, access_token: st
 
     log(f"Fertig: {counts['sick_reports']} Krankmeldung(en) und {counts['sick_report_audit']} Protokolleintrag/Protokolleinträge in die lokale Datenbank übernommen.")
     return counts
+
+
+def import_supabase_data_to_local(base_url: str, anon_key: str, access_token: str, log) -> dict[str, int]:
+    """Lädt sick_reports + sick_report_audit aus Supabase und fügt sie der
+    lokalen SQLite-Datenbank hinzu (einmaliger Umstieg, siehe README.md)."""
+    log("Lade Krankmeldungen von Supabase …")
+    reports = supabase_fetch_all(base_url, anon_key, access_token, "sick_reports")
+    log(f"  -> {len(reports)} Krankmeldung(en) gefunden.")
+
+    audit_rows: list[dict] = []
+    try:
+        log("Lade Änderungsprotokoll von Supabase …")
+        audit_rows = supabase_fetch_all(base_url, anon_key, access_token, "sick_report_audit")
+        log(f"  -> {len(audit_rows)} Protokolleintrag/Protokolleinträge gefunden.")
+    except FileNotFoundError as e:
+        log(f"  -> Übersprungen: {e}")
+
+    return insert_sick_data_into_local_db(reports, audit_rows, log)
+
+
+BACKUPS_ROOT = PROJECT_ROOT / "Backups" / "Supabase"
+
+
+def list_available_backups() -> list[Path]:
+    """Findet vorhandene Sicherungsordner (siehe Supabase-Sicherung\\backup_gui.py),
+    neueste zuerst."""
+    if not BACKUPS_ROOT.exists():
+        return []
+    ordner = [d for d in BACKUPS_ROOT.iterdir() if d.is_dir() and (d / "sick_reports.json").exists()]
+    return sorted(ordner, key=lambda d: d.name, reverse=True)
+
+
+def import_backup_to_local(ordner: Path, log) -> dict[str, int]:
+    """Lädt ein vorhandenes Backup (sick_reports.json [+ sick_report_audit.json])
+    aus Backups\\Supabase\\<Datum_Uhrzeit>\\ und fügt es der lokalen
+    SQLite-Datenbank hinzu."""
+    log(f"Lese Backup-Ordner {ordner.name} …")
+    reports = json.loads((ordner / "sick_reports.json").read_text(encoding="utf-8"))
+    log(f"  -> {len(reports)} Krankmeldung(en) im Backup gefunden.")
+
+    audit_rows: list[dict] = []
+    audit_path = ordner / "sick_report_audit.json"
+    if audit_path.exists():
+        audit_rows = json.loads(audit_path.read_text(encoding="utf-8"))
+        log(f"  -> {len(audit_rows)} Protokolleintrag/Protokolleinträge im Backup gefunden.")
+
+    return insert_sick_data_into_local_db(reports, audit_rows, log)
 
 
 class App(tk.Tk):
@@ -833,10 +869,29 @@ class App(tk.Tk):
         self.dh_import_button = ttk.Button(import_frame, text="Jetzt einmalig importieren", command=self._start_supabase_import)
         self.dh_import_button.pack(anchor="w", pady=(10, 10))
 
-        self.dh_log = scrolledtext.ScrolledText(import_frame, height=10, state="disabled", wrap="word")
+        self.dh_log = scrolledtext.ScrolledText(import_frame, height=8, state="disabled", wrap="word")
         self.dh_log.pack(fill="both", expand=True)
 
+        backup_frame = ttk.LabelFrame(tab, text="Vorhandenes Backup laden", padding=10)
+        backup_frame.pack(fill="x", pady=(14, 0))
+        ttk.Label(
+            backup_frame,
+            text="Lädt ein mit dem Supabase-Sicherungs-Werkzeug bereits erstelltes Backup "
+            "(Backups\\Supabase\\<Datum_Uhrzeit>\\) in die lokale Datenbank - ohne erneute "
+            "Supabase-Anmeldung. Gleiche Hinweise wie oben: fügt hinzu, prüft nicht auf Duplikate.",
+            wraplength=820, justify="left", foreground="#5B6475",
+        ).pack(anchor="w", pady=(0, 10))
+        backup_row = ttk.Frame(backup_frame)
+        backup_row.pack(fill="x")
+        self.dh_backup_var = tk.StringVar()
+        self.dh_backup_combo = ttk.Combobox(backup_row, textvariable=self.dh_backup_var, state="readonly", width=40)
+        self.dh_backup_combo.pack(side="left")
+        ttk.Button(backup_row, text="Liste aktualisieren", command=self._refresh_backup_liste).pack(side="left", padx=(8, 0))
+        self.dh_backup_button = ttk.Button(backup_row, text="Dieses Backup laden", command=self._start_backup_import)
+        self.dh_backup_button.pack(side="left", padx=(8, 0))
+
         self._refresh_datenhaltung_status()
+        self._refresh_backup_liste()
 
     def _log_datenhaltung(self, message: str):
         self.dh_log.configure(state="normal")
@@ -923,6 +978,42 @@ class App(tk.Tk):
         self.dh_import_button.configure(state="normal")
         self._log_datenhaltung(f"FEHLER: {message}")
         messagebox.showerror("Import fehlgeschlagen", message)
+
+    def _refresh_backup_liste(self):
+        backups = list_available_backups()
+        anzeige = [b.name for b in backups]  # Anzeigename: Ordnername (Datum_Uhrzeit)
+        self.dh_backup_combo["values"] = anzeige
+        if anzeige:
+            self.dh_backup_combo.current(0)
+        else:
+            self.dh_backup_var.set("")
+
+    def _start_backup_import(self):
+        name = self.dh_backup_var.get()
+        if not name:
+            messagebox.showinfo("Kein Backup gefunden", "Es wurde kein Backup-Ordner mit sick_reports.json gefunden.")
+            return
+        ordner = BACKUPS_ROOT / name
+        if LOCAL_DB_PATH.exists() and not messagebox.askyesno(
+            "Import bestätigen",
+            f"Backup '{name}' wird zusätzlich in die lokale Datenbank übernommen, ohne vorhandene "
+            "Einträge zu entfernen oder auf Duplikate zu prüfen.\n\nJetzt fortfahren?",
+        ):
+            return
+
+        self.dh_backup_button.configure(state="disabled")
+        self._log_datenhaltung(f"Starte Import aus Backup '{name}' …")
+
+        def work():
+            try:
+                counts = import_backup_to_local(ordner, self._log_datenhaltung_threadsafe)
+                self.after(0, lambda: self._on_supabase_import_done(counts))
+            except Exception as e:  # noqa: BLE001
+                self.after(0, lambda: self._on_supabase_import_failed(str(e)))
+            finally:
+                self.after(0, lambda: self.dh_backup_button.configure(state="normal"))
+
+        threading.Thread(target=work, daemon=True).start()
 
 
 if __name__ == "__main__":

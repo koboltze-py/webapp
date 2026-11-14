@@ -208,6 +208,10 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
   (`/api/dienstplan/import`, erkennt Krank-Meldungen und gelb markierte
   Bulli-Fahrer:innen wie im Nesk3-Projekt) und ein allgemeines
   Mitteilungsboard (`/api/meldungen`)
+- Dienstplan: Standard-Sortierung T/T10/T8/sonstige Tag/N/N10/DT/DT3/DN/DN3,
+  Erkennung abweichender Dienstzeiten, Filter (Suche/Status/Tag-Nacht-Anzeige),
+  manuelle Korrektur (Krank/Bulli-Fahrer/Zeiten/Notiz) mit eigenem
+  Änderungsprotokoll (`/api/dienstplan/audit`, nur Admin)
 
 ## 4. Supabase-Sicherung (GUI-Werkzeug)
 
@@ -261,9 +265,12 @@ Funktionen:
 - **Datenhaltung**: zeigt den aktuellen Modus (Lokal/Supabase) an,
   erlaubt das Umschalten (schreibt `backend\.env`) und den einmaligen
   Import vorhandener Supabase-Daten (Krankmeldungen + Änderungsprotokoll)
-  in die lokale Datenbank. Dieser Reiter spricht Supabase direkt an und
-  schreibt direkt in die lokale SQLite-Datei - dafür muss die Webapp
-  nicht laufen.
+  in die lokale Datenbank - entweder live von Supabase (Rolle + Passwort)
+  oder aus einem bereits vorhandenen Backup-Ordner
+  (`Backups\Supabase\<Datum_Uhrzeit>\`, erstellt mit dem
+  Supabase-Sicherungs-Werkzeug) ohne erneute Supabase-Anmeldung. Dieser
+  Reiter spricht Supabase/die Backup-Dateien direkt an und schreibt
+  direkt in die lokale SQLite-Datei - dafür muss die Webapp nicht laufen.
 
 ## 6. Datenschutz (unverändert wichtig)
 

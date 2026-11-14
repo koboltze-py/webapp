@@ -146,6 +146,7 @@ class DienstplanEintragOut(BaseModel):
     sortier_rang: int = 999
     ist_dispo: bool = False
     zeit_abweichend: bool = False
+    schicht_typ: Optional[str] = None
 
 
 class DienstplanEintragUpdate(BaseModel):

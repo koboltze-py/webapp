@@ -48,6 +48,13 @@ RANG_UNBEKANNT = 999
 
 DISPO_KATEGORIEN = frozenset({"DT", "DT3", "DN", "DN3"})
 
+# Tag-/Nachtschicht-Zuordnung nach Kategorie-BEZEICHNUNG (nicht nach Uhrzeit):
+# "D"+"T"-Kategorien gelten organisatorisch als Tagdienst, auch wenn DT3
+# zeitlich nachts liegt (siehe Docstring/Nesk3: "schichttechnisch Nacht,
+# aber als Tag klassifiziert"). Für den Tag/Nacht-Filter im Frontend.
+TAG_KATEGORIEN = frozenset({"T", "T10", "T8", "DT", "DT3"})
+NACHT_KATEGORIEN = frozenset({"N", "N10", "DN", "DN3"})
+
 
 def _stunde(zeit: Optional[str]) -> Optional[int]:
     if not zeit or ":" not in zeit:
@@ -100,20 +107,25 @@ def kategorisiere_eintrag(eintrag: dict[str, Any]) -> dict[str, Any]:
         rang = SORTIER_RANG[kategorie]
         ref_start, ref_end = KANONISCHE_ZEITEN[kategorie if kategorie in KANONISCHE_ZEITEN else "DN"]
         zeit_abweichend = bool(start_zeit) and (start_zeit != ref_start or (end_zeit or None) != ref_end)
+        schicht_typ = "tag" if kategorie in TAG_KATEGORIEN else "nacht"
     else:
         stunde = _stunde(start_zeit)
         if stunde is None:
             rang = RANG_UNBEKANNT
+            schicht_typ = None
         elif 5 <= stunde < 15:
             rang = RANG_SONSTIGE_TAG
+            schicht_typ = "tag"
         else:
             rang = RANG_SONSTIGE_NACHT
+            schicht_typ = "nacht"
         zeit_abweichend = False  # keine Referenzzeit vorhanden -> kein Vergleich möglich
 
     ergebnis["effektive_kategorie"] = kategorie
     ergebnis["sortier_rang"] = rang
     ergebnis["ist_dispo"] = kategorie in DISPO_KATEGORIEN
     ergebnis["zeit_abweichend"] = zeit_abweichend
+    ergebnis["schicht_typ"] = schicht_typ
     return ergebnis
 
 

@@ -201,6 +201,7 @@ th{background:#f3f5f7;white-space:nowrap}
             <div><label for="dienstplanSuche">Mitarbeiter suchen</label><input id="dienstplanSuche" placeholder="Name eingeben" autocomplete="off"></div>
             <div><label for="dienstplanStatusFilter">Status</label><select id="dienstplanStatusFilter"><option value="all">Alle</option><option value="krank">Nur Krank</option><option value="bulli">Nur Bulli-Fahrer:in</option><option value="abweichend">Nur abweichende Zeiten</option><option value="regulaer">Nur regulär</option></select></div>
             <div><label for="dienstplanSortierung">Sortierung</label><select id="dienstplanSortierung"><option value="standard" selected>Standard (Dienstart)</option><option value="name">Name A-Z</option><option value="beginn">Beginn der Schicht</option></select></div>
+            <div><label>Schicht</label><label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanTagschicht" checked style="width:auto"> Tagschicht</label> <label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanNachtschicht" checked style="width:auto"> Nachtschicht</label></div>
             <button type="button" id="dienstplanLaden" class="secondary">Laden</button>
           </div>
           <p class="small muted" id="dienstplanQuelle"></p>
@@ -711,7 +712,7 @@ $('dienstplanImportForm').onsubmit=async e=>{
   }catch(err){msg('dienstplanImportMessage','Import fehlgeschlagen: '+err.message,true)}
 };
 $('dienstplanLaden').onclick=loadDienstplan;
-for(const id of ['dienstplanSuche','dienstplanStatusFilter','dienstplanSortierung'])$(id).addEventListener('input',renderDienstplan);
+for(const id of ['dienstplanSuche','dienstplanStatusFilter','dienstplanSortierung','dienstplanTagschicht','dienstplanNachtschicht'])$(id).addEventListener('input',renderDienstplan);
 
 async function loadDienstplan(){
   const tag=$('dienstplanDatum').value||today();
@@ -729,8 +730,11 @@ async function loadDienstplan(){
 function dienstplanGefiltert(){
   const q=$('dienstplanSuche').value.trim().toLocaleLowerCase('de-DE');
   const status=$('dienstplanStatusFilter').value;
+  const zeigeTag=$('dienstplanTagschicht').checked,zeigeNacht=$('dienstplanNachtschicht').checked;
   let rows=dienstplanRows.filter(e=>{
     if(q&&!e.mitarbeiter_name.toLocaleLowerCase('de-DE').includes(q))return false;
+    if(e.schicht_typ==='tag'&&!zeigeTag)return false;
+    if(e.schicht_typ==='nacht'&&!zeigeNacht)return false;
     if(status==='krank')return e.ist_krank;
     if(status==='bulli')return e.ist_bulmorfahrer;
     if(status==='abweichend')return e.zeit_abweichend;
