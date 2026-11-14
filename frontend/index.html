@@ -39,8 +39,12 @@ label{font-weight:600;font-size:13px;display:block;margin-bottom:5px}
 .filter-dates.hidden{display:none!important}
 .tablewrap{overflow:auto}
 table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:900px}
-th,td{text-align:left;padding:6px 9px;border:1px solid var(--border-soft);vertical-align:top;line-height:1.35}
+th,td{text-align:left;padding:6px 9px;border:1px solid var(--border);vertical-align:top;line-height:1.35}
 th{background:#f3f5f7;white-space:nowrap}
+/* Buttons innerhalb von Tabellenzellen kompakter als Standard-Buttons, damit
+   Zeilen mit Aktions-Buttons (z. B. Mitarbeiter: Verlauf/Bearbeiten/Löschen)
+   nicht unnötig hoch werden. */
+td button{padding:5px 10px;font-size:12.5px}
 .pill{display:inline-block;background:#fce7e8;color:#95262f;padding:4px 8px;border-radius:99px;font-size:12px;font-weight:600}
 .pill.done{background:#e3f3e9;color:#167346}
 .pill.warn{background:#fff3b0;color:#7a5d00}
@@ -68,7 +72,10 @@ th{background:#f3f5f7;white-space:nowrap}
 
 /* --- Shell: Sidebar + Topbar + Inhalt --- */
 .shell{display:flex;min-height:100vh}
-.sidebar{width:226px;flex:0 0 226px;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px}
+/* position:sticky statt im normalen Fluss, damit die Sidebar beim Scrollen
+   langer Tabellen/Listen immer sichtbar bleibt (vorher wanderte sie mit dem
+   restlichen Seiteninhalt aus dem sichtbaren Bereich). */
+.sidebar{width:226px;flex:0 0 226px;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px;position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto}
 .sidebar .brand{display:flex;flex-direction:column;padding:0 8px 16px;border-bottom:1px solid var(--border-soft);margin-bottom:12px}
 .sidebar .brand strong{font-size:15px}
 .sidebar .brand small{color:var(--muted)}
