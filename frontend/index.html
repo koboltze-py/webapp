@@ -57,6 +57,8 @@ th{background:#f3f5f7;white-space:nowrap}
 .metric{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px}
 .metric strong{display:block;font-size:28px;color:var(--primary)}
 .metric span{font-size:12px;color:var(--muted)}
+#dienstplanZusammenfassung{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.metric .dp-sub{display:block;margin-top:4px;font-size:11px;color:var(--muted)}
 
 /* --- Login --- */
 #login{max-width:440px;margin:10vh auto}
@@ -208,11 +210,12 @@ th{background:#f3f5f7;white-space:nowrap}
           </div>
           <p class="small muted" id="dienstplanQuelle"></p>
           <section class="summary" id="dienstplanZusammenfassung" style="margin:0 0 14px">
-            <div class="metric"><strong id="dpSumTag">–</strong><span>Tag im Dienst, ohne Dispo (<span id="dpSumTagKrank">0</span> krank)</span></div>
-            <div class="metric"><strong id="dpSumNacht">–</strong><span>Nacht im Dienst, ohne Dispo (<span id="dpSumNachtKrank">0</span> krank)</span></div>
+            <div class="metric"><strong id="dpSumTag">–</strong><span>Tag im Dienst, ohne Dispo (<span id="dpSumTagKrank">0</span> krank)</span><span class="dp-sub" id="dpSumTagAufteilung"></span></div>
+            <div class="metric"><strong id="dpSumNacht">–</strong><span>Nacht im Dienst, ohne Dispo (<span id="dpSumNachtKrank">0</span> krank)</span><span class="dp-sub" id="dpSumNachtAufteilung"></span></div>
             <div class="metric"><strong id="dpSumDispo">–</strong><span>Dispo im Dienst: <span id="dpSumDispoTag">0</span> Tag / <span id="dpSumDispoNacht">0</span> Nacht (<span id="dpSumDispoKrank">0</span> krank)</span></div>
+            <div class="metric"><strong id="dpSumStarkAbweichend">–</strong><span>Zeiten &gt; 1 Std. vom Rest der Dienstart abweichend</span></div>
           </section>
-          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
+          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th>Gesamtrechnung</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
           <p id="dienstplanMessage" class="small muted" role="status"></p>
         </section>
         <section class="card hidden" id="dienstplanEditCard">
@@ -734,7 +737,7 @@ $('auditExport').onclick=()=>{
 };
 
 /* ============================= Dienstplan ============================= */
-let dienstplanRows=[],dienstplanEditingId=null,dienstplanEditingEntry=null,dienstplanKrankPopupEntry=null,dienstplanKrankPopupQueue=[];
+let dienstplanRows=[],dienstplanEditingId=null,dienstplanEditingEntry=null,dienstplanKrankPopupEntry=null,dienstplanKrankPopupQueue=[],dienstplanAusschlussSet=new Set();
 $('dienstplanImportForm').onsubmit=async e=>{
   e.preventDefault();
   const file=$('dienstplanDatei').files[0];
@@ -772,6 +775,7 @@ for(const id of ['dienstplanSuche','dienstplanStatusFilter','dienstplanSortierun
 
 async function loadDienstplan(){
   const tag=$('dienstplanDatum').value||today();
+  dienstplanAusschlussSet=new Set();
   try{
     dienstplanRows=await api('/api/dienstplan?von='+tag+'&bis='+tag);
     renderDienstplan();
@@ -784,11 +788,46 @@ async function loadDienstplan(){
     }
   }catch(err){msg('dienstplanMessage','Abruf fehlgeschlagen: '+err.message,true)}
 }
+/* Zeithilfen für die Abweichungs-Erkennung "mehr als 1 Std. vom Rest der
+   eigenen Dienstart" (Modus je Kategorie des Tages, nicht fester Referenzwert). */
+function zeitZuMinuten(z){if(!z||z.indexOf(':')<0)return null;const t=z.split(':');const h=parseInt(t[0],10),m=parseInt(t[1],10);if(isNaN(h)||isNaN(m))return null;return h*60+m}
+function zeitDiffMinuten(a,b){const ma=zeitZuMinuten(a),mb=zeitZuMinuten(b);if(ma===null||mb===null)return 0;const diff=Math.abs(ma-mb);return Math.min(diff,1440-diff)}
+function zeitModus(zeiten){
+  const counts={};
+  for(const z of zeiten){if(!z)continue;counts[z]=(counts[z]||0)+1}
+  let best=null,bestCount=-1;
+  for(const z in counts){if(counts[z]>bestCount){best=z;bestCount=counts[z]}}
+  return best;
+}
+/* Liefert die Menge der Eintrags-IDs, deren Beginn oder Ende mehr als 60
+   Minuten vom Modus (häufigster Wert) der eigenen Dienstart an diesem Tag
+   abweicht - Vergleich "vom Rest der Gruppe", nicht gegen einen festen
+   Referenzwert. Krank/Rufbereitschaft/manuell ausgeschlossene Einträge
+   fließen nicht in den Vergleich ein. */
+function berechneStarkAbweichendeIds(rows){
+  const gruppen={};
+  for(const e of rows){
+    if(e.ist_krank||e.virtuell||dienstplanAusschlussSet.has(String(e.id)))continue;
+    if((e.dienst_kategorie||'').trim().toUpperCase()==='R')continue;
+    const kat=e.effektive_kategorie||e.dienst_kategorie||'?';
+    (gruppen[kat]=gruppen[kat]||[]).push(e);
+  }
+  const ids=new Set();
+  for(const kat in gruppen){
+    const liste=gruppen[kat];
+    if(liste.length<2)continue;
+    const modusStart=zeitModus(liste.map(e=>e.start_zeit));
+    const modusEnde=zeitModus(liste.map(e=>e.end_zeit));
+    for(const e of liste){
+      if(zeitDiffMinuten(e.start_zeit,modusStart)>60||zeitDiffMinuten(e.end_zeit,modusEnde)>60)ids.add(String(e.id));
+    }
+  }
+  return ids;
+}
 function renderDienstplanZusammenfassung(){
-  // Rufbereitschaft (Dienst-Kürzel "R") zählt nirgends als "im Dienst" mit.
-  const relevant=dienstplanRows.filter(e=>(e.dienst_kategorie||'').trim().toUpperCase()!=='R');
-  // Krank gemeldete Mitarbeitende sind nicht tatsächlich im Dienst -> aus der
-  // Hauptzahl herausgerechnet, aber weiterhin als "(X krank)" ausgewiesen.
+  // Manuell ausgeschlossene, Rufbereitschaft (Dienst-Kürzel "R") und Kranke
+  // zählen nirgends in der Gesamtrechnung mit.
+  const relevant=dienstplanRows.filter(e=>!dienstplanAusschlussSet.has(String(e.id))&&(e.dienst_kategorie||'').trim().toUpperCase()!=='R');
   const anwesend=relevant.filter(e=>!e.ist_krank);
   const tag=anwesend.filter(e=>e.schicht_typ==='tag'&&!e.ist_dispo);
   const nacht=anwesend.filter(e=>e.schicht_typ==='nacht'&&!e.ist_dispo);
@@ -803,6 +842,14 @@ function renderDienstplanZusammenfassung(){
   $('dpSumDispoTag').textContent=dispoTag.length;
   $('dpSumDispoNacht').textContent=dispoNacht.length;
   $('dpSumDispoKrank').textContent=relevant.filter(e=>e.ist_dispo&&e.ist_krank).length;
+  const aufteilung=(liste)=>{
+    const z={};
+    for(const e of liste){const k=e.effektive_kategorie||'sonstige';z[k]=(z[k]||0)+1}
+    return Object.keys(z).sort().map(k=>k+': '+z[k]).join(' · ')||'–';
+  };
+  $('dpSumTagAufteilung').textContent=aufteilung(tag);
+  $('dpSumNachtAufteilung').textContent=aufteilung(nacht);
+  $('dpSumStarkAbweichend').textContent=berechneStarkAbweichendeIds(dienstplanRows).size;
 }
 function dienstplanGefiltert(){
   const q=$('dienstplanSuche').value.trim().toLocaleLowerCase('de-DE');
@@ -826,11 +873,12 @@ function dienstplanGefiltert(){
 }
 function renderDienstplan(){
   const rows=dienstplanGefiltert();
+  const starkAbweichendIds=berechneStarkAbweichendeIds(dienstplanRows);
   const body=$('dienstplanEntries');body.replaceChildren();
   let vorherigeDispo=null;
   for(const e of rows){
     if($('dienstplanSortierung').value==='standard' && e.ist_dispo && vorherigeDispo===false){
-      const divider=body.insertRow();divider.className='dp-divider';const td=divider.insertCell();td.colSpan=7;td.append(text('Dispo'));
+      const divider=body.insertRow();divider.className='dp-divider';const td=divider.insertCell();td.colSpan=8;td.append(text('Dispo'));
     }
     vorherigeDispo=e.ist_dispo;
     const tr=body.insertRow();
@@ -840,9 +888,23 @@ function renderDienstplan(){
     if(e.ist_krank){const p=document.createElement('span');p.className='pill';p.textContent='Krank';statusCell.append(p,document.createTextNode(' '))}
     if(e.ist_bulmorfahrer){const p=document.createElement('span');p.className='pill warn';p.textContent='Bulli-Fahrer:in';statusCell.append(p,document.createTextNode(' '))}
     if(e.zeit_abweichend){const p=document.createElement('span');p.className='pill info';p.textContent='Abweichende Zeit';statusCell.append(p,document.createTextNode(' '))}
+    if(starkAbweichendIds.has(String(e.id))){const p=document.createElement('span');p.className='pill warn';p.title='Beginn oder Ende weicht um mehr als 1 Std. vom Rest der eigenen Dienstart ab.';p.textContent='> 1 Std. vom Rest abweichend';statusCell.append(p,document.createTextNode(' '))}
     if(e.virtuell){const p=document.createElement('span');p.className='pill info';p.title='Aus laufender Krankmeldung übernommen, noch kein Dienstplan für diesen Tag importiert.';p.textContent='Ohne Dienstplan';statusCell.append(p,document.createTextNode(' '))}
-    if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend&&!e.virtuell)statusCell.append(text('–'));
+    if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend&&!e.virtuell&&!starkAbweichendIds.has(String(e.id)))statusCell.append(text('–'));
     cell(tr,e.notiz||'–');
+    const rechnungCell=tr.insertCell();
+    const ausgeschlossen=dienstplanAusschlussSet.has(String(e.id));
+    const rechnungBtn=document.createElement('button');
+    rechnungBtn.className='secondary small';
+    rechnungBtn.textContent=ausgeschlossen?'Wieder einrechnen':'Ausschließen';
+    rechnungBtn.title=ausgeschlossen?'Wieder in die Tag/Nacht/Dispo-Gesamtrechnung einbeziehen.':'Aus der Tag/Nacht/Dispo-Gesamtrechnung herausnehmen (z. B. bei kurzfristigem Ausfall).';
+    rechnungBtn.onclick=()=>{
+      const id=String(e.id);
+      if(dienstplanAusschlussSet.has(id))dienstplanAusschlussSet.delete(id);else dienstplanAusschlussSet.add(id);
+      renderDienstplan();renderDienstplanZusammenfassung();
+    };
+    rechnungCell.append(rechnungBtn);
+    if(ausgeschlossen){const p=document.createElement('span');p.className='pill';p.style.marginLeft='6px';p.textContent='ausgeschlossen';rechnungCell.append(p)}
     const actionCell=tr.insertCell();actionCell.dataset.minRole='schichtleitung';actionCell.classList.toggle('hidden',!roleAtLeast('schichtleitung'));
     if(e.virtuell){actionCell.append(text('–'))}
     else{const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit)}
