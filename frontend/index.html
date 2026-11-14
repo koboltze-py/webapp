@@ -47,6 +47,8 @@ th{background:#f3f5f7;white-space:nowrap}
 .pill.info{background:#dce8ff;color:#123a8a}
 .dp-divider td{background:#eef0f4;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.04em;padding:6px 10px}
 .dp-virtuell{font-style:italic;color:var(--muted)}
+.dp-stark-abweichend td{background:#fff4e5}
+.dp-stark-abweichend td:first-child{border-left:3px solid #c77700;font-weight:600}
 .tabnav{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap}
 .tabnav button{background:#e8ecf1;color:var(--ink)}
 .tabnav button.active{background:var(--primary);color:#fff}
@@ -142,7 +144,7 @@ th{background:#f3f5f7;white-space:nowrap}
     <div class="brand"><strong>DRK FKB</strong><small>Erste-Hilfe-Station Flughafen</small></div>
     <button type="button" class="navitem" data-view="heute"><span class="ic">🏠</span> Heute</button>
     <button type="button" class="navitem" data-view="dienstplan"><span class="ic">📋</span> Dienstplan</button>
-    <button type="button" class="navitem" data-view="personal"><span class="ic">🧑‍⚕️</span> Personal</button>
+    <button type="button" class="navitem" data-view="personal"><span class="ic">🧑‍⚕️</span> Personal / Krankmeldungen</button>
     <button type="button" class="navitem" data-view="meldungen"><span class="ic">📣</span> Meldungen</button>
     <button type="button" class="navitem" data-view="einstellungen" data-min-role="admin"><span class="ic">⚙️</span> Einstellungen</button>
   </aside>
@@ -213,7 +215,7 @@ th{background:#f3f5f7;white-space:nowrap}
             <div class="metric"><strong id="dpSumTag">–</strong><span>Tag im Dienst, ohne Dispo (<span id="dpSumTagKrank">0</span> krank)</span><span class="dp-sub" id="dpSumTagAufteilung"></span></div>
             <div class="metric"><strong id="dpSumNacht">–</strong><span>Nacht im Dienst, ohne Dispo (<span id="dpSumNachtKrank">0</span> krank)</span><span class="dp-sub" id="dpSumNachtAufteilung"></span></div>
             <div class="metric"><strong id="dpSumDispo">–</strong><span>Dispo im Dienst: <span id="dpSumDispoTag">0</span> Tag / <span id="dpSumDispoNacht">0</span> Nacht (<span id="dpSumDispoKrank">0</span> krank)</span></div>
-            <div class="metric"><strong id="dpSumStarkAbweichend">–</strong><span>Zeiten &gt; 1 Std. vom Rest der Dienstart abweichend</span></div>
+            <div class="metric"><strong id="dpSumStarkAbweichend">–</strong><span>Zeiten &gt; 1 Std. vom Rest der Dienstart abweichend</span><span class="dp-sub" id="dpSumStarkAbweichendNamen"></span></div>
           </section>
           <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th>Gesamtrechnung</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
           <p id="dienstplanMessage" class="small muted" role="status"></p>
@@ -381,7 +383,7 @@ th{background:#f3f5f7;white-space:nowrap}
 <nav class="bottomnav" aria-label="Mobile Navigation">
   <button type="button" data-view="heute"><span>🏠</span>Heute</button>
   <button type="button" data-view="dienstplan"><span>📋</span>Dienstplan</button>
-  <button type="button" data-view="personal"><span>🧑‍⚕️</span>Personal</button>
+  <button type="button" data-view="personal"><span>🧑‍⚕️</span>Personal / Krankmeldungen</button>
   <button type="button" data-view="meldungen"><span>📣</span>Meldungen</button>
   <button type="button" id="bottomMehr"><span>⋯</span>Mehr</button>
 </nav>
@@ -799,11 +801,11 @@ function zeitModus(zeiten){
   for(const z in counts){if(counts[z]>bestCount){best=z;bestCount=counts[z]}}
   return best;
 }
-/* Liefert die Menge der Eintrags-IDs, deren Beginn oder Ende mehr als 60
-   Minuten vom Modus (häufigster Wert) der eigenen Dienstart an diesem Tag
-   abweicht - Vergleich "vom Rest der Gruppe", nicht gegen einen festen
-   Referenzwert. Krank/Rufbereitschaft/manuell ausgeschlossene Einträge
-   fließen nicht in den Vergleich ein. */
+/* Liefert eine Map Eintrags-ID -> Eintrag für alle Zeilen, deren Beginn
+   oder Ende mehr als 60 Minuten vom Modus (häufigster Wert) der eigenen
+   Dienstart an diesem Tag abweicht - Vergleich "vom Rest der Gruppe",
+   nicht gegen einen festen Referenzwert. Krank/Rufbereitschaft/manuell
+   ausgeschlossene Einträge fließen nicht in den Vergleich ein. */
 function berechneStarkAbweichendeIds(rows){
   const gruppen={};
   for(const e of rows){
@@ -812,17 +814,17 @@ function berechneStarkAbweichendeIds(rows){
     const kat=e.effektive_kategorie||e.dienst_kategorie||'?';
     (gruppen[kat]=gruppen[kat]||[]).push(e);
   }
-  const ids=new Set();
+  const treffer=new Map();
   for(const kat in gruppen){
     const liste=gruppen[kat];
     if(liste.length<2)continue;
     const modusStart=zeitModus(liste.map(e=>e.start_zeit));
     const modusEnde=zeitModus(liste.map(e=>e.end_zeit));
     for(const e of liste){
-      if(zeitDiffMinuten(e.start_zeit,modusStart)>60||zeitDiffMinuten(e.end_zeit,modusEnde)>60)ids.add(String(e.id));
+      if(zeitDiffMinuten(e.start_zeit,modusStart)>60||zeitDiffMinuten(e.end_zeit,modusEnde)>60)treffer.set(String(e.id),e);
     }
   }
-  return ids;
+  return treffer;
 }
 function renderDienstplanZusammenfassung(){
   // Manuell ausgeschlossene, Rufbereitschaft (Dienst-Kürzel "R") und Kranke
@@ -849,7 +851,9 @@ function renderDienstplanZusammenfassung(){
   };
   $('dpSumTagAufteilung').textContent=aufteilung(tag);
   $('dpSumNachtAufteilung').textContent=aufteilung(nacht);
-  $('dpSumStarkAbweichend').textContent=berechneStarkAbweichendeIds(dienstplanRows).size;
+  const starkAbweichend=berechneStarkAbweichendeIds(dienstplanRows);
+  $('dpSumStarkAbweichend').textContent=starkAbweichend.size;
+  $('dpSumStarkAbweichendNamen').textContent=starkAbweichend.size?[...starkAbweichend.values()].map(e=>e.mitarbeiter_name).sort((a,b)=>a.localeCompare(b,'de-DE')).join(' · '):'';
 }
 function dienstplanGefiltert(){
   const q=$('dienstplanSuche').value.trim().toLocaleLowerCase('de-DE');
@@ -883,6 +887,7 @@ function renderDienstplan(){
     vorherigeDispo=e.ist_dispo;
     const tr=body.insertRow();
     tr.classList.toggle('dp-virtuell',!!e.virtuell);
+    tr.classList.toggle('dp-stark-abweichend',starkAbweichendIds.has(String(e.id)));
     cell(tr,e.mitarbeiter_name);cell(tr,e.dienst_kategorie||(e.effektive_kategorie?'(KRANK, eig. '+e.effektive_kategorie+')':'–'));cell(tr,e.start_zeit||'–');cell(tr,e.end_zeit||'–');
     const statusCell=tr.insertCell();
     if(e.ist_krank){const p=document.createElement('span');p.className='pill';p.textContent='Krank';statusCell.append(p,document.createTextNode(' '))}
