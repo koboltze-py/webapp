@@ -27,6 +27,13 @@ if not ENV_PATH.exists():
         "DISPOSITION_USERNAME=DRKFKB\n"
         "ADMIN_PASSWORD=BitteAendern123\n"
         "DISPOSITION_PASSWORD=Disposition\n"
+        "# Steuert, ob dauerhaft mit Supabase gearbeitet wird (siehe README.md\n"
+        "# Abschnitt \"Datenhaltung: lokal oder Supabase\"). Solange hier 'false'\n"
+        "# steht, laufen ALLE Module (auch Krankmeldungen) ueber die lokale\n"
+        "# SQLite-Datenbank, selbst wenn Supabase-Sicherung\\config.json bereits\n"
+        "# gueltige Zugangsdaten enthaelt. Am einfachsten ueber das\n"
+        "# Verwaltungstool (Reiter 'Datenhaltung') umschalten.\n"
+        "SUPABASE_AKTIV=false\n"
         "# Nur für Einzel-Logins mit aktiver Supabase-Anbindung nötig, siehe\n"
         "# README.md Abschnitt \"Einzel-Logins für Mitarbeitende\":\n"
         "# TIER_SERVICE_PASSWORD_ADMIN=\n"
@@ -87,9 +94,16 @@ class Settings:
     tier_service_password_schichtleitung: str = os.getenv("TIER_SERVICE_PASSWORD_SCHICHTLEITUNG", "")
     tier_service_password_mitarbeiter: str = os.getenv("TIER_SERVICE_PASSWORD_MITARBEITER", "")
 
+    # Expliziter Schalter: Erst wenn dieser auf true steht, wird Supabase
+    # tatsächlich verwendet - auch wenn Supabase-Sicherung\config.json schon
+    # gültige Zugangsdaten enthält. So kann die Supabase-Konfiguration schon
+    # vorbereitet werden, während alle Module vorerst lokal (SQLite) laufen.
+    # Umschaltbar über das Verwaltungstool (Reiter "Datenhaltung").
+    supabase_aktiv: bool = os.getenv("SUPABASE_AKTIV", "false").strip().lower() in ("1", "true", "yes", "ja")
+
     @property
     def supabase_enabled(self) -> bool:
-        return bool(
+        return self.supabase_aktiv and bool(
             self.supabase_url
             and self.supabase_anon_key
             and self.supabase_login_email_admin

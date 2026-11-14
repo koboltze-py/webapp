@@ -4,18 +4,29 @@ Eigenständiges Tkinter-Tool für:
   - Mitarbeiter-Stammdaten anlegen/bearbeiten/löschen
   - Benutzerkonten (Einzel-Logins) anlegen/bearbeiten
   - Tagesdienstpläne aus Excel-Dateien importieren
+  - Datenhaltung lokal/Supabase umschalten + einmaliger Datenimport
 
-Spricht dieselbe FastAPI-Webapp an wie der Browser (siehe backend\\app),
-über die ganz normale /api/...-Schnittstelle mit Login-Session-Cookie -
-keine eigene Datenbank- oder Supabase-Anbindung, keine doppelte
-Validierungslogik. Die Webapp muss dafür laufen (siehe start_app.bat).
+Die ersten drei Punkte sprechen dieselbe FastAPI-Webapp an wie der Browser
+(siehe backend\\app), über die ganz normale /api/...-Schnittstelle mit
+Login-Session-Cookie - keine eigene Validierungslogik. Die Webapp muss
+dafür laufen (siehe start_app.bat).
+
+Der Reiter "Datenhaltung" ist bewusst unabhängig von der laufenden Webapp:
+er liest/schreibt backend\\.env direkt (der Server liest diese Datei nur
+beim Start, eine Umschaltung wird daher erst nach einem Neustart wirksam)
+und schreibt beim einmaligen Supabase-Import direkt in die lokale
+SQLite-Datei backend\\data\\krankmeldungen.db.
 
 Start: siehe start_verwaltungstool.bat im Projekt-Hauptordner.
 """
 from __future__ import annotations
 
+import json
+import re
+import sqlite3
 import threading
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
@@ -24,6 +35,11 @@ import requests
 DEFAULT_SERVER = "http://127.0.0.1:8000"
 ROLLEN = ["mitarbeiter", "schichtleitung", "admin"]
 ROLLEN_LABEL = {"mitarbeiter": "Mitarbeiter", "schichtleitung": "Schichtleitung", "admin": "Admin"}
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ENV_PATH = PROJECT_ROOT / "backend" / ".env"
+LOCAL_DB_PATH = PROJECT_ROOT / "backend" / "data" / "krankmeldungen.db"
+SUPABASE_CONFIG_PATH = PROJECT_ROOT / "Supabase-Sicherung" / "config.json"
 
 
 class ApiError(RuntimeError):
@@ -96,6 +112,213 @@ class ApiClient:
             files = {"datei": (file_path.name, fh, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
             resp = self.session.post(self._url("/api/dienstplan/import"), files=files, timeout=60)
         return self._handle(resp)
+
+
+# ============================================================================
+# Datenhaltung (lokal/Supabase-Schalter + einmaliger Supabase-Import)
+# ============================================================================
+
+
+def read_env_dict(path: Path) -> dict[str, str]:
+    """Liest eine .env-Datei (einfaches KEY=VALUE je Zeile, '#' = Kommentar)."""
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        values[key.strip()] = value.strip()
+    return values
+
+
+def write_env_value(path: Path, key: str, value: str) -> None:
+    """Setzt einen einzelnen Schlüssel in einer .env-Datei, ohne den Rest
+    (Kommentare, andere Werte) zu verändern. Legt den Schlüssel am Ende an,
+    falls er noch nicht existiert."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    pattern = re.compile(rf"^{re.escape(key)}\s*=")
+    found = False
+    for i, line in enumerate(lines):
+        if pattern.match(line.strip()):
+            lines[i] = f"{key}={value}"
+            found = True
+            break
+    if not found:
+        lines.append(f"{key}={value}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def load_supabase_config() -> dict:
+    if not SUPABASE_CONFIG_PATH.exists():
+        return {}
+    try:
+        return json.loads(SUPABASE_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def supabase_sign_in(base_url: str, anon_key: str, email: str, password: str) -> str:
+    resp = requests.post(
+        f"{base_url.rstrip('/')}/auth/v1/token",
+        params={"grant_type": "password"},
+        headers={"apikey": anon_key, "Content-Type": "application/json"},
+        json={"email": email, "password": password},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        detail = resp.json().get("error_description") or resp.json().get("msg") or resp.text
+        raise PermissionError(f"Anmeldung bei Supabase fehlgeschlagen: {detail}")
+    return resp.json()["access_token"]
+
+
+def supabase_fetch_all(base_url: str, anon_key: str, access_token: str, table: str) -> list[dict]:
+    """Lädt alle Zeilen einer PostgREST-Tabelle (Paging wie in
+    Supabase-Sicherung\\backup_gui.py)."""
+    rows: list[dict] = []
+    page_size = 1000
+    offset = 0
+    headers = {"apikey": anon_key, "Authorization": f"******", "Accept": "application/json"}
+    while True:
+        resp = requests.get(
+            f"{base_url.rstrip('/')}/rest/v1/{table}",
+            params={"select": "*", "order": "id.asc"},
+            headers={**headers, "Range": f"{offset}-{offset + page_size - 1}"},
+            timeout=30,
+        )
+        if resp.status_code == 404 or (resp.status_code == 400 and "does not exist" in resp.text):
+            raise FileNotFoundError(f"Tabelle '{table}' existiert nicht in diesem Supabase-Projekt.")
+        if resp.status_code not in (200, 206):
+            raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+        batch = resp.json()
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return rows
+
+
+def _parse_supabase_timestamp(value: str | None) -> str | None:
+    """Wandelt einen Supabase-Zeitstempel (ISO8601, z. B. mit 'Z' oder
+    Zeitzonen-Offset) in das von SQLAlchemy/SQLite erwartete Format
+    ('YYYY-MM-DD HH:MM:SS.ffffff', naiv/UTC) um."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(tz=None).replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+    except ValueError:
+        return value
+
+
+def import_supabase_data_to_local(base_url: str, anon_key: str, access_token: str, log) -> dict[str, int]:
+    """Lädt sick_reports + sick_report_audit aus Supabase und fügt sie der
+    lokalen SQLite-Datenbank hinzu (einmaliger Umstieg, siehe README.md).
+    Vorhandene lokale Einträge bleiben erhalten, es werden nur neue Zeilen
+    angehängt (keine Duplikat-Prüfung - für einen einmaligen Umzug gedacht)."""
+    counts = {"sick_reports": 0, "sick_report_audit": 0}
+
+    log("Lade Krankmeldungen von Supabase …")
+    reports = supabase_fetch_all(base_url, anon_key, access_token, "sick_reports")
+    log(f"  -> {len(reports)} Krankmeldung(en) gefunden.")
+
+    audit_rows: list[dict] = []
+    try:
+        log("Lade Änderungsprotokoll von Supabase …")
+        audit_rows = supabase_fetch_all(base_url, anon_key, access_token, "sick_report_audit")
+        log(f"  -> {len(audit_rows)} Protokolleintrag/Protokolleinträge gefunden.")
+    except FileNotFoundError as e:
+        log(f"  -> Übersprungen: {e}")
+
+    LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(LOCAL_DB_PATH)
+    try:
+        cur = con.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sick_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reported_at DATE NOT NULL,
+                employee VARCHAR(150) NOT NULL,
+                sick_from DATE NOT NULL,
+                sick_to DATE NOT NULL,
+                call_at TIME,
+                accepted_by VARCHAR(150) NOT NULL DEFAULT '',
+                notes VARCHAR(1000) NOT NULL DEFAULT '',
+                careman_done BOOLEAN NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sick_report_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_at DATETIME NOT NULL,
+                report_id INTEGER,
+                action VARCHAR(10) NOT NULL,
+                actor_role VARCHAR(20) NOT NULL,
+                old_data JSON,
+                new_data JSON
+            )
+            """
+        )
+
+        for row in reports:
+            cur.execute(
+                """
+                INSERT INTO sick_reports
+                    (reported_at, employee, sick_from, sick_to, call_at, accepted_by, notes,
+                     careman_done, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row.get("reported_at"),
+                    row.get("employee", ""),
+                    row.get("sick_from"),
+                    row.get("sick_to"),
+                    row.get("call_at"),
+                    row.get("accepted_by", "") or "",
+                    row.get("notes", "") or "",
+                    1 if row.get("careman_done") else 0,
+                    _parse_supabase_timestamp(row.get("created_at")) or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"),
+                    _parse_supabase_timestamp(row.get("updated_at")) or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"),
+                ),
+            )
+            counts["sick_reports"] += 1
+
+        for row in audit_rows:
+            # report_id ist in Supabase eine UUID, lokal eine fortlaufende
+            # Ganzzahl - nicht direkt übertragbar. Für das Protokoll selbst
+            # unkritisch: alte/neue Werte (alt_data/new_data) bleiben erhalten
+            # und werden unabhängig vom report_id angezeigt (siehe frontend).
+            cur.execute(
+                """
+                INSERT INTO sick_report_audit
+                    (event_at, report_id, action, actor_role, old_data, new_data)
+                VALUES (?, NULL, ?, ?, ?, ?)
+                """,
+                (
+                    _parse_supabase_timestamp(row.get("event_at")) or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f"),
+                    row.get("action", ""),
+                    row.get("actor_role", ""),
+                    json.dumps(row["old_data"], ensure_ascii=False) if row.get("old_data") is not None else None,
+                    json.dumps(row["new_data"], ensure_ascii=False) if row.get("new_data") is not None else None,
+                ),
+            )
+            counts["sick_report_audit"] += 1
+
+        con.commit()
+    finally:
+        con.close()
+
+    log(f"Fertig: {counts['sick_reports']} Krankmeldung(en) und {counts['sick_report_audit']} Protokolleintrag/Protokolleinträge in die lokale Datenbank übernommen.")
+    return counts
 
 
 class App(tk.Tk):
@@ -202,6 +425,7 @@ class App(tk.Tk):
         self._build_mitarbeiter_tab(notebook)
         self._build_benutzer_tab(notebook)
         self._build_dienstplan_tab(notebook)
+        self._build_datenhaltung_tab(notebook)
 
         self._refresh_mitarbeiter()
         self._refresh_benutzer()
@@ -555,6 +779,149 @@ class App(tk.Tk):
     def _on_import_failed(self, message: str):
         self.dp_import_button.configure(state="normal")
         self._log_dienstplan(f"FEHLER: {message}")
+        messagebox.showerror("Import fehlgeschlagen", message)
+
+    # ---- Tab: Datenhaltung (lokal/Supabase) --------------------------------
+    def _build_datenhaltung_tab(self, notebook: ttk.Notebook):
+        tab = ttk.Frame(notebook, padding=10)
+        notebook.add(tab, text="Datenhaltung")
+
+        status_frame = ttk.LabelFrame(tab, text="Aktueller Modus", padding=10)
+        status_frame.pack(fill="x")
+        self.dh_status_var = tk.StringVar(value="Wird geprüft …")
+        ttk.Label(status_frame, textvariable=self.dh_status_var, font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(
+            status_frame,
+            text="Solange 'Lokal' aktiv ist, laufen alle Module (Krankmeldungen, Mitarbeiter, "
+            "Dienstplan, Meldungen, Logins) über die lokale SQLite-Datenbank dieses PCs - "
+            "unabhängig davon, ob Supabase-Sicherung\\config.json bereits ausgefüllt ist. "
+            "Eine Umschaltung wird erst nach einem Neustart der Webapp (start_app.bat) wirksam.",
+            wraplength=820, justify="left", foreground="#5B6475",
+        ).pack(anchor="w", pady=(6, 0))
+
+        btn_frame = ttk.Frame(status_frame)
+        btn_frame.pack(anchor="w", pady=(10, 0))
+        ttk.Button(btn_frame, text="Auf Lokal umstellen", command=lambda: self._set_datenhaltung_modus(False)).pack(side="left")
+        ttk.Button(btn_frame, text="Auf Supabase umstellen", command=lambda: self._set_datenhaltung_modus(True)).pack(side="left", padx=(8, 0))
+        ttk.Button(btn_frame, text="Aktualisieren", command=self._refresh_datenhaltung_status).pack(side="left", padx=(8, 0))
+
+        import_frame = ttk.LabelFrame(tab, text="Supabase-Daten einmalig in die lokale Datenbank übernehmen", padding=10)
+        import_frame.pack(fill="x", pady=(14, 0))
+        ttk.Label(
+            import_frame,
+            text="Lädt die Krankmeldungen (und, falls vorhanden, das Änderungsprotokoll) einmalig aus "
+            "Supabase herunter und fügt sie der lokalen Datenbank hinzu. Bereits vorhandene lokale "
+            "Einträge bleiben erhalten; ein erneuter Import fügt Daten erneut hinzu (keine "
+            "Duplikat-Prüfung) - daher nur einmal ausführen.",
+            wraplength=820, justify="left", foreground="#5B6475",
+        ).pack(anchor="w", pady=(0, 10))
+
+        form = ttk.Frame(import_frame)
+        form.pack(fill="x")
+        ttk.Label(form, text="Rolle:").grid(row=0, column=0, sticky="w")
+        self.dh_rolle_var = tk.StringVar(value="admin")
+        role_frame = ttk.Frame(form)
+        role_frame.grid(row=0, column=1, sticky="w")
+        ttk.Radiobutton(role_frame, text="Admin", variable=self.dh_rolle_var, value="admin").pack(side="left")
+        ttk.Radiobutton(role_frame, text="Disposition/Schichtleitung", variable=self.dh_rolle_var, value="disposition").pack(side="left", padx=(10, 0))
+
+        ttk.Label(form, text="Supabase-Passwort:").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.dh_password_var = tk.StringVar()
+        ttk.Entry(form, textvariable=self.dh_password_var, show="•", width=30).grid(row=1, column=1, sticky="w", pady=(6, 0))
+        form.columnconfigure(1, weight=1)
+
+        self.dh_import_button = ttk.Button(import_frame, text="Jetzt einmalig importieren", command=self._start_supabase_import)
+        self.dh_import_button.pack(anchor="w", pady=(10, 10))
+
+        self.dh_log = scrolledtext.ScrolledText(import_frame, height=10, state="disabled", wrap="word")
+        self.dh_log.pack(fill="both", expand=True)
+
+        self._refresh_datenhaltung_status()
+
+    def _log_datenhaltung(self, message: str):
+        self.dh_log.configure(state="normal")
+        self.dh_log.insert("end", message + "\n")
+        self.dh_log.see("end")
+        self.dh_log.configure(state="disabled")
+
+    def _refresh_datenhaltung_status(self):
+        env = read_env_dict(ENV_PATH)
+        aktiv = env.get("SUPABASE_AKTIV", "false").strip().lower() in ("1", "true", "yes", "ja")
+        cfg = load_supabase_config()
+        konfiguriert = bool(cfg.get("supabase_url") and cfg.get("supabase_anon_key"))
+        modus = "Supabase" if aktiv else "Lokal (SQLite)"
+        hinweis = "" if konfiguriert else "  (Supabase-Sicherung\\config.json ist noch nicht vollständig ausgefüllt)"
+        self.dh_status_var.set(f"Datenhaltung: {modus}{hinweis}")
+
+    def _set_datenhaltung_modus(self, supabase_aktiv: bool):
+        write_env_value(ENV_PATH, "SUPABASE_AKTIV", "true" if supabase_aktiv else "false")
+        self._refresh_datenhaltung_status()
+        messagebox.showinfo(
+            "Gespeichert",
+            "Einstellung gespeichert. Bitte die Webapp (start_app.bat-Fenster) neu starten, "
+            "damit die Änderung wirksam wird.",
+        )
+
+    def _start_supabase_import(self):
+        cfg = load_supabase_config()
+        base_url = cfg.get("supabase_url", "")
+        anon_key = cfg.get("supabase_anon_key", "")
+        if not base_url or not anon_key:
+            messagebox.showerror(
+                "Fehlende Angaben",
+                "Supabase-Sicherung\\config.json enthält noch keine Projekt-URL/Anon-Key.",
+            )
+            return
+        rolle = self.dh_rolle_var.get()
+        email = cfg.get("login_email_admin" if rolle == "admin" else "login_email_disposition", "")
+        password = self.dh_password_var.get()
+        if not email:
+            messagebox.showerror("Fehlende Angaben", "Für diese Rolle ist keine Login-E-Mail in config.json hinterlegt.")
+            return
+        if not password:
+            messagebox.showwarning("Eingabe fehlt", "Bitte das Supabase-Passwort eingeben.")
+            return
+
+        if LOCAL_DB_PATH.exists():
+            if not messagebox.askyesno(
+                "Import bestätigen",
+                f"Die lokale Datenbank existiert bereits ({LOCAL_DB_PATH.name}). "
+                "Dieser Import fügt die Supabase-Daten zusätzlich hinzu, ohne vorhandene lokale "
+                "Einträge zu entfernen oder auf Duplikate zu prüfen.\n\nJetzt fortfahren?",
+            ):
+                return
+
+        self.dh_import_button.configure(state="disabled")
+        self.dh_password_var.set("")
+        self._log_datenhaltung("Starte Import …")
+
+        def work():
+            try:
+                self._log_datenhaltung("Melde mich bei Supabase an …")
+                token = supabase_sign_in(base_url, anon_key, email, password)
+                self._log_datenhaltung("Anmeldung erfolgreich.")
+                counts = import_supabase_data_to_local(base_url, anon_key, token, self._log_datenhaltung_threadsafe)
+                self.after(0, lambda: self._on_supabase_import_done(counts))
+            except Exception as e:  # noqa: BLE001
+                self.after(0, lambda: self._on_supabase_import_failed(str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _log_datenhaltung_threadsafe(self, message: str):
+        self.after(0, lambda: self._log_datenhaltung(message))
+
+    def _on_supabase_import_done(self, counts: dict):
+        self.dh_import_button.configure(state="normal")
+        messagebox.showinfo(
+            "Import abgeschlossen",
+            f"{counts['sick_reports']} Krankmeldung(en) und {counts['sick_report_audit']} "
+            "Protokolleintrag/Protokolleinträge wurden in die lokale Datenbank übernommen.\n\n"
+            "Bitte die Webapp neu starten, falls sie gerade läuft.",
+        )
+
+    def _on_supabase_import_failed(self, message: str):
+        self.dh_import_button.configure(state="normal")
+        self._log_datenhaltung(f"FEHLER: {message}")
         messagebox.showerror("Import fehlgeschlagen", message)
 
 

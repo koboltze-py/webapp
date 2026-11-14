@@ -92,10 +92,36 @@ gleichzeitig. Die App sollte daher immer nur auf einem Rechner gleichzeitig
 laufen; vor dem Beenden kurz warten, bis OneDrive die Änderung hochgeladen
 hat (grünes Häkchen).
 
-### Dauerhafte Supabase-Anbindung (aktiv, sobald Supabase-Sicherung\config.json vorhanden ist)
+### Datenhaltung: lokal oder Supabase
 
-Statt der lokalen `krankmeldungen.db` liest/schreibt das Backend die
-Krankmeldungen dauerhaft im **bestehenden Supabase-Projekt** (demselben,
+**Standardmäßig läuft die App vollständig lokal** (SQLite-Datei
+`backend\data\krankmeldungen.db`) - für **alle** Module (Krankmeldungen,
+Mitarbeiter-Stammdaten, Dienstplan, Meldungen, Benutzerkonten), auch wenn
+`Supabase-Sicherung\config.json` bereits gültige Zugangsdaten enthält.
+Gesteuert wird das über den Schalter `SUPABASE_AKTIV` in `backend\.env`
+(Standard: `false`) - am einfachsten über das **Verwaltungstool**, Reiter
+„Datenhaltung" umschaltbar (schreibt dieselbe `.env`-Datei). Nach einer
+Umschaltung muss die Webapp (`start_app.bat`) neu gestartet werden, damit
+sie wirksam wird.
+
+Dort lässt sich auch **einmalig** der aktuelle Stand aus Supabase
+(Krankmeldungen + Änderungsprotokoll, falls vorhanden) in die lokale
+Datenbank übernehmen (Rolle + Supabase-Passwort eingeben, „Jetzt einmalig
+importieren"). Das ist als einmaliger Umzug gedacht, keine laufende
+Synchronisation - ein erneuter Lauf hängt die Daten erneut an, ohne auf
+Duplikate zu prüfen.
+
+Langfristig ist eine **dauerhafte** Supabase-Anbindung vorgesehen (siehe
+unten), damit mehrere PCs dieselben Daten sehen - bis diese vollständig
+eingerichtet ist (neues Mitarbeiter-Servicekonto, SQL-Migrationen,
+Service-Passwörter, siehe weiter unten), bleibt `SUPABASE_AKTIV=false` die
+empfohlene Einstellung.
+
+### Dauerhafte Supabase-Anbindung (erst aktiv, wenn SUPABASE_AKTIV=true gesetzt ist)
+
+Ist `SUPABASE_AKTIV=true` gesetzt UND `Supabase-Sicherung\config.json`
+vollständig ausgefüllt, liest/schreibt das Backend die Krankmeldungen
+dauerhaft im **bestehenden Supabase-Projekt** (demselben,
 das die alte Netlify-Webapp unter `..\Background` verwendet) - genau nach
 demselben Prinzip wie die alte Webseite: Login mit Benutzername+Passwort,
 intern auf eine der beiden technischen E-Mail-Adressen abgebildet
@@ -107,10 +133,7 @@ benötigt.
 
 Die nötigen Werte (Project URL, anon-Key, die beiden Login-E-Mails) stehen
 bereits in `Supabase-Sicherung\config.json` - dieselbe Datei, die auch das
-Sicherungs-Werkzeug verwendet. Ist diese Datei vorhanden und vollständig
-ausgefüllt, aktiviert sich der Supabase-Modus automatisch beim Start; ohne
-sie (oder bei fehlenden Werten) läuft die App unverändert mit der lokalen
-SQLite-Datenbank weiter.
+Sicherungs-Werkzeug verwendet.
 
 Einmalige Einrichtung in Supabase (SQL Editor des Projekts):
 
@@ -235,6 +258,12 @@ Funktionen:
 - **Dienstplan-Import**: Excel-Datei auswählen und importieren, inkl.
   Rückmeldung zu Anzahl Einträgen, Krank-Meldungen, Bulli-Fahrer:innen
   und unbekannten Dienstkürzeln.
+- **Datenhaltung**: zeigt den aktuellen Modus (Lokal/Supabase) an,
+  erlaubt das Umschalten (schreibt `backend\.env`) und den einmaligen
+  Import vorhandener Supabase-Daten (Krankmeldungen + Änderungsprotokoll)
+  in die lokale Datenbank. Dieser Reiter spricht Supabase direkt an und
+  schreibt direkt in die lokale SQLite-Datei - dafür muss die Webapp
+  nicht laufen.
 
 ## 6. Datenschutz (unverändert wichtig)
 
