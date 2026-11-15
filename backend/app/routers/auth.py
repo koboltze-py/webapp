@@ -25,8 +25,14 @@ from ..aktivitaet import record_activity
 from ..config import settings
 from ..deps import TIER_ROLES
 from ..modules_repository import get_benutzer_repository
-from ..schemas import LoginRequest, LoginResponse
-from ..security import verify_password
+from ..schemas import (
+    LoginRequest,
+    LoginResponse,
+    PasswortResetRequest,
+    PasswortVergessenRequest,
+    PasswortVergessenResponse,
+)
+from ..security import hash_password, normalize_answer, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -36,7 +42,7 @@ def _legacy_role(username: str) -> str | None:
     if username == settings.admin_username.upper():
         return "admin"
     if username == settings.disposition_username.upper():
-        return "schichtleitung"
+        return "disponent"
     return None
 
 
@@ -119,5 +125,52 @@ def me(request: Request):
     role = request.session.get("role")
     if role not in ("admin", "disposition", *TIER_ROLES):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nicht angemeldet.")
-    normalized = {"disposition": "schichtleitung"}.get(role, role)
+    normalized = {"disposition": "disponent"}.get(role, role)
     return {"role": normalized, "username": request.session.get("username", "")}
+
+
+def _normalisiert(text: str) -> str:
+    """Groß-/Kleinschreibung und umgebende Leerzeichen spielen bei der
+    Sicherheitsantwort keine Rolle (nutzerfreundlicher), siehe unten."""
+    return normalize_answer(text)
+
+
+@router.post("/passwort-vergessen", response_model=PasswortVergessenResponse)
+def passwort_vergessen(
+    payload: PasswortVergessenRequest,
+    benutzer_repo=Depends(get_benutzer_repository),
+):
+    """Erster Schritt der Selbstbedienungs-Passwort-Reset-Funktion: liefert
+    (falls vorhanden) die hinterlegte Sicherheitsfrage des Accounts. Gibt
+    bewusst IMMER eine Antwort mit Status 200 zurück (nie 404), damit sich
+    nicht erraten lässt, welche Benutzernamen existieren."""
+    benutzer = benutzer_repo.get_by_username(payload.username.strip())
+    if not benutzer:
+        return PasswortVergessenResponse(sicherheitsfrage=None)
+    frage = benutzer["sicherheitsfrage"] if isinstance(benutzer, dict) else benutzer.sicherheitsfrage
+    return PasswortVergessenResponse(sicherheitsfrage=frage or None)
+
+
+@router.post("/passwort-reset")
+def passwort_reset(
+    payload: PasswortResetRequest,
+    request: Request,
+    benutzer_repo=Depends(get_benutzer_repository),
+):
+    """Zweiter Schritt: bei korrekter Antwort auf die Sicherheitsfrage wird
+    das neue Passwort gesetzt. Ohne hinterlegte Sicherheitsfrage/Antwort ist
+    nur der Admin-Reset (PUT /api/benutzer/{id}) möglich."""
+    benutzer = benutzer_repo.get_by_username(payload.username.strip())
+    if not benutzer:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Benutzername oder Antwort falsch.")
+    antwort_hash = benutzer["sicherheitsantwort_hash"] if isinstance(benutzer, dict) else benutzer.sicherheitsantwort_hash
+    benutzer_id = benutzer["id"] if isinstance(benutzer, dict) else benutzer.id
+    username = benutzer["username"] if isinstance(benutzer, dict) else benutzer.username
+    if not antwort_hash or not verify_password(_normalisiert(payload.sicherheitsantwort), antwort_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Benutzername oder Antwort falsch.")
+    benutzer_repo.update_benutzer(benutzer_id, {"password_hash": hash_password(payload.neues_passwort)})
+    record_activity(
+        request, aktion="PASSWORT_RESET", bereich="Anmeldung", username=username, rolle="",
+        beschreibung="Passwort über Sicherheitsfrage selbst zurückgesetzt.",
+    )
+    return {"ok": True}

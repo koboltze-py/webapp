@@ -1,6 +1,8 @@
-"""Änderungsprotokoll – nur für die Rolle 'admin' einsehbar. Enthält auch
-das Benutzer-Aktivitätsprotokoll (Logfile je Account, siehe aktivitaet.py):
-wer wann an-/abgemeldet war und welche Aktion er ausgeführt hat."""
+"""Änderungsprotokoll – für Schichtleitung und Admin einsehbar (Schichtleitung
+darf laut Rollenmodell "alles außer Careman-Status", siehe deps.py; zuvor nur
+Admin). Enthält auch das Benutzer-Aktivitätsprotokoll (Logfile je Account,
+siehe aktivitaet.py): wer wann an-/abgemeldet war und welche Aktion er
+ausgeführt hat."""
 from __future__ import annotations
 
 from datetime import date
@@ -12,7 +14,7 @@ from fastapi.responses import Response
 from .. import supabase_client as sb
 from ..aktivitaet import list_activity
 from ..config import settings
-from ..deps import require_admin
+from ..deps import require_schichtleitung
 from ..excel_export import export_tabelle_excel
 from ..repository import ReportsRepository, get_reports_repository
 from ..schemas import AuditOut, BenutzerAktivitaetOut
@@ -23,7 +25,7 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 @router.get("", response_model=List[AuditOut])
 def list_audit(
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(require_admin),
+    role: str = Depends(require_schichtleitung),
 ):
     return repo.list_audit()
 
@@ -58,7 +60,7 @@ def _benutzerprotokoll(username: Optional[str] = None) -> list[dict[str, Any]]:
 @router.get("/benutzerprotokoll", response_model=List[BenutzerAktivitaetOut])
 def list_benutzerprotokoll(
     username: Optional[str] = None,
-    role: str = Depends(require_admin),
+    role: str = Depends(require_schichtleitung),
 ):
     """Logfile je Benutzerkonto (siehe models.py:BenutzerAktivitaet):
     Login/Logout + Anlegen/Bearbeiten/Löschen über alle Module hinweg.
@@ -69,7 +71,7 @@ def list_benutzerprotokoll(
 @router.get("/benutzerprotokoll/export")
 def export_benutzerprotokoll(
     username: Optional[str] = None,
-    role: str = Depends(require_admin),
+    role: str = Depends(require_schichtleitung),
 ):
     """Excel-Export des Benutzer-Aktivitätsprotokolls, für das
     Verwaltungstool."""

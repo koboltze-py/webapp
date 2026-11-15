@@ -1,0 +1,23 @@
+Dieser Ordner enthält ein fortlaufendes, für Menschen lesbares
+Änderungsprotokoll des Dienstplans - je Tag eine Excel-Datei, die bei
+jedem Import und jeder manuellen Änderung (bearbeitet/hinzugefügt/
+entfernt/wiederhergestellt) um eine neue Zeile WÄCHST (im Unterschied zum
+Tagesdienstplan-Schnappschuss in Backups\Tagesdienstpläne, der je Tag nur
+den aktuellen Stand zeigt und bei jeder Änderung überschrieben wird).
+
+Struktur: ein Unterordner je Jahr, darin ein Unterordner je Monat, darin
+eine Datei je Tag, z. B.:
+
+```
+2026\11_November\14.11.2026.xlsx
+```
+
+Jede Zeile enthält: Zeitpunkt, Aktion (IMPORT/BEARBEITET/HINZUGEFÜGT/
+ENTFERNT/WIEDERHERGESTELLT), Mitarbeiter, Durchgeführt von, Rolle,
+Beschreibung. Siehe backend\app\tagesprotokoll.py. Das Speichern ist
+"best effort": Schlägt es fehl, wird die eigentliche Operation dadurch
+nicht beeinträchtigt - es fehlt dann nur der Protokolleintrag für diesen
+Speicherpunkt.
+
+Datenschutz: Diese Dateien enthalten Mitarbeiternamen, Dienstzeiten und
+Krank-Status. Zugriff beschränken und nach Löschkonzept entsorgen.

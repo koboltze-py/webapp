@@ -52,6 +52,7 @@ td button{padding:5px 10px;font-size:12.5px}
 .dp-divider td{background:#eef0f4;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.04em;padding:6px 10px}
 .dp-divider-klein td{background:transparent;border-top:2px solid var(--border);border-bottom:none;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.04em;padding:3px 9px 2px}
 .dp-virtuell{font-style:italic;color:var(--muted)}
+.dp-geloescht{text-decoration:line-through;opacity:.6}
 .dp-stark-abweichend td{background:#fff4e5}
 .dp-stark-abweichend td:first-child{border-left:3px solid #c77700;font-weight:600}
 .tabnav{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap}
@@ -144,6 +145,22 @@ td button{padding:5px 10px;font-size:12.5px}
     <button type="submit">Anmelden</button>
     <p id="loginMessage" class="error" role="alert"></p>
   </form>
+  <p class="small"><a href="#" id="passwortVergessenLink">Passwort vergessen?</a></p>
+</section>
+
+<section id="passwortVergessen" class="card hidden">
+  <h2>Passwort zurücksetzen</h2>
+  <form id="pvSchritt1Form">
+    <div class="field"><label for="pvUsername">Benutzername</label><input id="pvUsername" required maxlength="80" autocomplete="username"></div>
+    <div class="actions"><button type="submit">Weiter</button><button type="button" id="pvAbbrechen1" class="secondary">Zurück zur Anmeldung</button></div>
+  </form>
+  <form id="pvSchritt2Form" class="hidden">
+    <p class="small muted" id="pvFrage"></p>
+    <div class="field"><label for="pvAntwort">Antwort</label><input id="pvAntwort" required maxlength="200" autocomplete="off"></div>
+    <div class="field"><label for="pvNeuesPasswort">Neues Passwort</label><input id="pvNeuesPasswort" type="password" required minlength="6" maxlength="200" autocomplete="new-password"></div>
+    <div class="actions"><button type="submit">Passwort setzen</button><button type="button" id="pvAbbrechen2" class="secondary">Abbrechen</button></div>
+  </form>
+  <p id="pvMessage" class="small" role="status"></p>
 </section>
 
 <div id="app" class="hidden">
@@ -154,7 +171,7 @@ td button{padding:5px 10px;font-size:12.5px}
     <button type="button" class="navitem" data-view="dienstplan"><span class="ic">📋</span> Dienstplan</button>
     <button type="button" class="navitem" data-view="personal"><span class="ic">🧑‍⚕️</span> Personal / Krankmeldungen</button>
     <button type="button" class="navitem" data-view="meldungen"><span class="ic">📣</span> Meldungen</button>
-    <button type="button" class="navitem" data-view="einstellungen" data-min-role="admin"><span class="ic">⚙️</span> Einstellungen</button>
+    <button type="button" class="navitem" data-view="einstellungen" data-min-role="schichtleitung"><span class="ic">⚙️</span> Einstellungen</button>
   </aside>
 
   <div class="main">
@@ -174,12 +191,13 @@ td button{padding:5px 10px;font-size:12.5px}
       <!-- ============ Heute ============ -->
       <section id="view-heute" class="view">
         <div class="pagehead"><div><h2>Heute</h2><p class="small muted">Alles Wichtige auf einen Blick.</p></div></div>
-        <section class="summary" data-min-role="schichtleitung">
+        <div id="systemWarnungen"></div>
+        <section class="summary" data-min-role="disponent">
           <div class="metric"><strong id="kpiToday">–</strong><span>Heute krank</span></div>
           <div class="metric"><strong id="kpiOpen">–</strong><span>Offene Meldungen</span></div>
           <div class="metric" data-min-role="admin"><strong id="kpiCareman">–</strong><span>Careman ausstehend</span></div>
         </section>
-        <p class="small muted hidden" id="heuteKpiHinweis">Kennzahlen zu Krankmeldungen sind für Schichtleitung/Admin sichtbar.</p>
+        <p class="small muted hidden" id="heuteKpiHinweis">Kennzahlen zu Krankmeldungen sind für Disponent/Schichtleitung/Admin sichtbar.</p>
         <div class="cards3">
           <div class="todaycard">
             <h3>Dienstplan heute <button type="button" class="secondary small" data-view="dienstplan">Öffnen</button></h3>
@@ -189,7 +207,7 @@ td button{padding:5px 10px;font-size:12.5px}
             <h3>Aktuelle Meldungen <button type="button" class="secondary small" data-view="meldungen">Öffnen</button></h3>
             <ul class="linklist" id="heuteMeldungen"><li class="muted">Lädt …</li></ul>
           </div>
-          <div class="todaycard" data-min-role="schichtleitung">
+          <div class="todaycard" data-min-role="disponent">
             <h3>Offene Krankmeldungen <button type="button" class="secondary small" data-view="personal">Öffnen</button></h3>
             <ul class="linklist" id="heuteKrankmeldungen"><li class="muted">Lädt …</li></ul>
           </div>
@@ -199,7 +217,7 @@ td button{padding:5px 10px;font-size:12.5px}
       <!-- ============ Dienstplan ============ -->
       <section id="view-dienstplan" class="view">
         <div class="pagehead"><div><h2>Dienstplan</h2><p class="small muted">Tagesdienstplan anzeigen, aus Excel importieren und bei Bedarf korrigieren.</p></div></div>
-        <section class="card" data-min-role="schichtleitung">
+        <section class="card" data-min-role="disponent">
           <h2>Tagesdienstplan importieren</h2>
           <p class="small muted">Excel-Datei (.xlsx) mit Spalten NAME/DIENST/BEGINN/ENDE. "KRANK"/"K" wird als Krankmeldung erkannt, gelb hinterlegte Zeilen als Bulmor-Fahrer:in. Ein Import ersetzt die bisherigen Einträge dieses Tages in der lokalen Dienstplan-Datenbank.</p>
           <form id="dienstplanImportForm" class="actions">
@@ -215,8 +233,10 @@ td button{padding:5px 10px;font-size:12.5px}
             <div><label for="dienstplanStatusFilter">Status</label><select id="dienstplanStatusFilter"><option value="all">Alle</option><option value="krank">Nur Krank</option><option value="bulli">Nur Bulmor-Fahrer:in</option><option value="abweichend">Nur abweichende Zeiten</option><option value="regulaer">Nur regulär</option></select></div>
             <div><label for="dienstplanSortierung">Sortierung</label><select id="dienstplanSortierung"><option value="standard" selected>Standard (Dienstart)</option><option value="name">Name A-Z</option><option value="beginn">Beginn der Schicht</option></select></div>
             <div><label>Schicht</label><label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanTagschicht" checked style="width:auto"> Tagschicht</label> <label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanNachtschicht" checked style="width:auto"> Nachtschicht</label></div>
+            <div data-min-role="disponent"><label>Entfernte Einträge</label><label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="dienstplanGeloeschteAnzeigen" style="width:auto"> Entfernte anzeigen</label></div>
             <button type="button" id="dienstplanLaden" class="secondary">Laden</button>
             <button type="button" id="dienstplanExport" class="secondary">Als Excel exportieren</button>
+            <button type="button" id="dienstplanHinzufuegenOeffnen" class="secondary" data-min-role="disponent">+ Mitarbeiter hinzufügen</button>
           </div>
           <p class="small muted" id="dienstplanQuelle"></p>
           <section class="summary" id="dienstplanZusammenfassung" style="margin:0 0 14px">
@@ -226,8 +246,24 @@ td button{padding:5px 10px;font-size:12.5px}
             <div class="metric"><strong id="dpSumBulmor">–</strong><span>Bulmor-Fahrer:in: <span id="dpSumBulmorTag">0</span> Tag / <span id="dpSumBulmorNacht">0</span> Nacht</span></div>
             <div class="metric"><strong id="dpSumStarkAbweichend">–</strong><span>Zeiten &gt; 1 Std. vom Rest der Dienstart abweichend</span><span class="dp-sub" id="dpSumStarkAbweichendNamen"></span></div>
           </section>
-          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th>Gesamtrechnung</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
+          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th>Gesamtrechnung</th><th data-min-role="disponent">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
           <p id="dienstplanMessage" class="small muted" role="status"></p>
+        </section>
+        <section class="card hidden" id="dienstplanHinzufuegenCard" data-min-role="disponent">
+          <h2>Mitarbeiter manuell zum Dienstplan hinzufügen</h2>
+          <form id="dienstplanHinzufuegenForm">
+            <div class="grid">
+              <div><label for="dpAddName">Name</label><input id="dpAddName" required maxlength="150" placeholder="Vorname Nachname" list="employeeSuggestionsDienstplan" autocomplete="off"><datalist id="employeeSuggestionsDienstplan"></datalist></div>
+              <div><label for="dpAddKategorie">Dienst</label><input id="dpAddKategorie" maxlength="20" placeholder="z. B. T, N, DT"></div>
+              <div><label for="dpAddBeginn">Beginn</label><input id="dpAddBeginn" type="time"></div>
+              <div><label for="dpAddEnde">Ende</label><input id="dpAddEnde" type="time"></div>
+              <div><label for="dpAddKrank">Krank</label><select id="dpAddKrank"><option value="false">Nein</option><option value="true">Ja</option></select></div>
+              <div><label for="dpAddBulli">Bulmor-Fahrer:in</label><select id="dpAddBulli"><option value="false">Nein</option><option value="true">Ja</option></select></div>
+              <div class="wide"><label for="dpAddNotiz">Notiz</label><input id="dpAddNotiz" maxlength="500"></div>
+            </div>
+            <div class="actions"><button type="submit">Hinzufügen</button><button type="button" id="dpHinzufuegenAbbrechen" class="secondary">Abbrechen</button></div>
+            <p id="dienstplanHinzufuegenMessage" class="small" role="status"></p>
+          </form>
         </section>
         <section class="card hidden" id="dienstplanEditCard">
           <h2>Eintrag bearbeiten: <span id="dienstplanEditName"></span></h2>
@@ -257,7 +293,7 @@ td button{padding:5px 10px;font-size:12.5px}
             <p id="dpKrankPopupMessage" class="small" role="status"></p>
           </form>
         </section>
-        <section class="card" data-min-role="admin">
+        <section class="card" data-min-role="schichtleitung">
           <h2>Änderungsprotokoll Dienstplan <button type="button" id="dienstplanAuditToggle" class="secondary small">Anzeigen</button></h2>
           <div id="dienstplanAuditWrap" class="hidden">
             <div class="tablewrap"><table><thead><tr><th>Zeitpunkt</th><th>Mitarbeiter</th><th>Durch</th><th>Änderungen</th></tr></thead><tbody id="dienstplanAuditEntries"></tbody></table></div>
@@ -269,9 +305,9 @@ td button{padding:5px 10px;font-size:12.5px}
       <section id="view-personal" class="view">
         <div class="pagehead"><div><h2>Personal</h2><p class="small muted">Krankmeldungen, Mitarbeiter-Stammdaten und Änderungsprotokoll.</p></div></div>
         <nav class="tabnav" aria-label="Personal-Bereiche">
-          <button type="button" id="tabReports" class="active" data-min-role="schichtleitung">Krankmeldungen</button>
+          <button type="button" id="tabReports" class="active" data-min-role="disponent">Krankmeldungen</button>
           <button type="button" id="tabMitarbeiter">Mitarbeiter-Stammdaten</button>
-          <button type="button" id="tabAudit" data-min-role="admin">Änderungsprotokoll</button>
+          <button type="button" id="tabAudit" data-min-role="schichtleitung">Änderungsprotokoll</button>
         </nav>
 
         <div id="reportsView">
@@ -314,7 +350,7 @@ td button{padding:5px 10px;font-size:12.5px}
         </div>
 
         <section id="mitarbeiterView" class="hidden">
-          <section class="card" data-min-role="schichtleitung">
+          <section class="card" data-min-role="disponent">
             <h2 id="mitarbeiterFormTitle">Mitarbeiter:in anlegen</h2>
             <form id="mitarbeiterForm">
               <div class="grid">
@@ -331,9 +367,17 @@ td button{padding:5px 10px;font-size:12.5px}
               <p id="maFormMessage" class="small" role="status"></p>
             </form>
           </section>
+          <section class="card" data-min-role="disponent" id="mitarbeiterDuplikateCard">
+            <h2>Mögliche Dubletten <button type="button" id="mitarbeiterDuplikateToggle" class="secondary small">Prüfen</button></h2>
+            <p class="small muted">Sucht nach Stammdatensätzen mit exakt gleichem oder sehr ähnlichem Namen (z. B. Tippfehler) - zur manuellen Prüfung. Über "Bearbeiten"/"Löschen" unten in der Tabelle korrigierbar.</p>
+            <div id="mitarbeiterDuplikateWrap" class="hidden"><div id="mitarbeiterDuplikateListe"></div></div>
+          </section>
           <section class="card">
             <h2>Mitarbeiter-Stammdaten</h2>
-            <div class="tablewrap"><table><thead><tr><th>Name</th><th>Personalnummer</th><th>Funktion</th><th>E-Mail</th><th>Telefon</th><th>Status</th><th data-min-role="schichtleitung">Aktion</th></tr></thead><tbody id="mitarbeiterEntries"></tbody></table></div>
+            <div class="toolbar">
+              <div><label for="mitarbeiterSuche">Nach Namen suchen</label><input id="mitarbeiterSuche" placeholder="Vor- oder Nachname eingeben" autocomplete="off"></div>
+            </div>
+            <div class="tablewrap"><table><thead><tr><th>Name</th><th>Personalnummer</th><th>Funktion</th><th>E-Mail</th><th>Telefon</th><th>Status</th><th data-min-role="disponent">Aktion</th></tr></thead><tbody id="mitarbeiterEntries"></tbody></table></div>
             <p id="mitarbeiterMessage" class="small muted" role="status"></p>
           </section>
           <section class="card hidden" id="mitarbeiterVerlaufCard">
@@ -368,7 +412,7 @@ td button{padding:5px 10px;font-size:12.5px}
       <!-- ============ Meldungen ============ -->
       <section id="view-meldungen" class="view">
         <div class="pagehead"><div><h2>Meldungen</h2><p class="small muted">Allgemeines Mitteilungsboard für das Team.</p></div></div>
-        <section class="card" data-min-role="schichtleitung">
+        <section class="card" data-min-role="disponent">
           <h2 id="meldungFormTitle">Meldung verfassen</h2>
           <form id="meldungForm">
             <div class="field"><label for="meldungTitel">Titel</label><input id="meldungTitel" required maxlength="200"></div>
@@ -391,8 +435,31 @@ td button{padding:5px 10px;font-size:12.5px}
           <p class="small muted" id="einstellungenRolle"></p>
         </section>
         <section class="card">
+          <h2 id="benutzerFormTitle">Benutzerkonto anlegen</h2>
+          <p class="small muted">Einzel-Login mit eigenem Passwort und Rollenstufe. Die beiden Sammel-Logins (ADMIN/DRKFKB) bleiben davon unberührt.</p>
+          <form id="benutzerForm">
+            <div class="grid">
+              <div><label for="buUsername">Benutzername</label><input id="buUsername" required maxlength="80" autocomplete="off"></div>
+              <div><label for="buAnzeigename">Anzeigename</label><input id="buAnzeigename" maxlength="150"></div>
+              <div><label for="buRolle">Rolle</label><select id="buRolle">
+                <option value="mitarbeiter">Mitarbeiter</option>
+                <option value="disponent">Disponent</option>
+                <option value="schichtleitung">Schichtleitung</option>
+                <option value="admin">Admin</option>
+              </select></div>
+              <div><label for="buAktiv">Status</label><select id="buAktiv"><option value="true">Aktiv</option><option value="false">Inaktiv</option></select></div>
+              <div><label for="buPassword" id="buPasswordLabel">Passwort</label><input id="buPassword" type="password" maxlength="200" autocomplete="new-password"></div>
+              <div><label for="buFrage">Sicherheitsfrage (für Passwort-Reset)</label><input id="buFrage" maxlength="200" placeholder="z. B. Geburtsstadt?"></div>
+              <div class="wide"><label for="buAntwort" id="buAntwortLabel">Antwort auf Sicherheitsfrage</label><input id="buAntwort" maxlength="200" autocomplete="off"></div>
+            </div>
+            <div class="actions"><button id="buSaveBtn" type="submit">Speichern</button><button id="buResetBtn" type="button" class="secondary">Zurücksetzen</button></div>
+            <p id="benutzerFormMessage" class="small" role="status"></p>
+          </form>
+        </section>
+        <section class="card">
           <h2>Benutzerverwaltung</h2>
-          <p class="small muted">Neue Logins, Rollen und Mitarbeiter-Stammdaten werden über das separate Desktop-Verwaltungstool angelegt und gepflegt, nicht über diese Webseite.</p>
+          <div class="tablewrap"><table><thead><tr><th>Benutzername</th><th>Anzeigename</th><th>Rolle</th><th>Status</th><th>Sicherheitsfrage</th><th>Aktion</th></tr></thead><tbody id="benutzerEntries"></tbody></table></div>
+          <p id="benutzerMessage" class="small muted" role="status"></p>
         </section>
       </section>
 
@@ -408,7 +475,7 @@ td button{padding:5px 10px;font-size:12.5px}
   <button type="button" id="bottomMehr"><span>⋯</span>Mehr</button>
 </nav>
 <div id="mehrSheet" class="sheet hidden">
-  <button type="button" class="secondary" data-view="einstellungen" data-min-role="admin" style="width:100%;margin-bottom:8px">⚙️ Einstellungen</button>
+  <button type="button" class="secondary" data-view="einstellungen" data-min-role="schichtleitung" style="width:100%;margin-bottom:8px">⚙️ Einstellungen</button>
   <button type="button" class="outline" id="mehrLogout" style="width:100%">Abmelden</button>
 </div>
 </div>
@@ -418,7 +485,8 @@ td button{padding:5px 10px;font-size:12.5px}
 <script type="module">
 const $=id=>document.getElementById(id);
 let items=[],editing=null,currentRole=null,currentUsername='';
-const ROLE_RANK={mitarbeiter:0,schichtleitung:1,admin:2};
+const ROLE_RANK={mitarbeiter:0,disponent:1,schichtleitung:2,admin:3};
+const ROLLEN_LABEL={admin:'Admin',schichtleitung:'Schichtleitung',disponent:'Disponent',mitarbeiter:'Mitarbeiter',disposition:'Disponent',system:'System'};
 const roleAtLeast=r=>currentRole!==null && ROLE_RANK[currentRole]>=ROLE_RANK[r];
 const isAdmin=()=>currentRole==='admin';
 
@@ -454,11 +522,11 @@ function applyRoleVisibility(){
   });
 }
 function showRole(){
-  $('currentRole').textContent=({admin:'Admin',schichtleitung:'Schichtleitung',mitarbeiter:'Mitarbeiter'})[currentRole]+' · '+currentUsername;
+  $('currentRole').textContent=ROLLEN_LABEL[currentRole]+' · '+currentUsername;
   $('einstellungenUser').textContent=currentUsername;
-  $('einstellungenRolle').textContent='Rolle: '+({admin:'Admin',schichtleitung:'Schichtleitung',mitarbeiter:'Mitarbeiter'})[currentRole];
+  $('einstellungenRolle').textContent='Rolle: '+ROLLEN_LABEL[currentRole];
   applyRoleVisibility();
-  $('heuteKpiHinweis').classList.toggle('hidden', roleAtLeast('schichtleitung'));
+  $('heuteKpiHinweis').classList.toggle('hidden', roleAtLeast('disponent'));
 }
 async function startSession(){
   try{const data=await api('/api/auth/me');currentRole=data.role;currentUsername=data.username||'';showRole();switchView(true);await initViews();return true}
@@ -469,7 +537,7 @@ const fmt=d=>d?d.split('-').reverse().join('.'):'–';
 const text=(v)=>document.createTextNode(String(v??''));
 const msg=(id,value,isError=false)=>{ $(id).textContent=value;$(id).className=isError?'error small':'small muted';};
 function cell(tr,v){let td=tr.insertCell();td.append(text(v));return td}
-function switchView(loggedIn){$('login').classList.toggle('hidden',loggedIn);$('app').classList.toggle('hidden',!loggedIn)}
+function switchView(loggedIn){$('login').classList.toggle('hidden',loggedIn);$('app').classList.toggle('hidden',!loggedIn);if(loggedIn)$('passwortVergessen').classList.add('hidden')}
 function resetForm(){editing=null;$('entryForm').reset();$('reportedAt').value=today();$('sickFrom').value=today();$('sickTo').value=today();$('formTitle').textContent='Krankmeldung erfassen';$('saveBtn').textContent='Meldung speichern';msg('formMessage','')}
 
 $('loginForm').addEventListener('submit',async e=>{
@@ -481,6 +549,43 @@ $('loginForm').addEventListener('submit',async e=>{
     currentRole=data.role;currentUsername=data.username||username;showRole();switchView(true);await initViews();
   }catch(err){msg('loginMessage',err.message||'Anmeldung fehlgeschlagen.',true)}
 });
+
+/* ============================= Passwort vergessen ============================= */
+$('passwortVergessenLink').addEventListener('click',e=>{
+  e.preventDefault();
+  $('login').classList.add('hidden');
+  $('passwortVergessen').classList.remove('hidden');
+  $('pvSchritt1Form').classList.remove('hidden');$('pvSchritt2Form').classList.add('hidden');
+  $('pvUsername').value='';msg('pvMessage','');
+});
+function pvZurueckZurAnmeldung(){$('passwortVergessen').classList.add('hidden');$('login').classList.remove('hidden')}
+$('pvAbbrechen1').onclick=pvZurueckZurAnmeldung;
+$('pvAbbrechen2').onclick=pvZurueckZurAnmeldung;
+let pvUsername='';
+$('pvSchritt1Form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  pvUsername=$('pvUsername').value.trim();
+  msg('pvMessage','Suche …');
+  try{
+    const data=await api('/api/auth/passwort-vergessen',{method:'POST',body:JSON.stringify({username:pvUsername})});
+    if(!data.sicherheitsfrage){msg('pvMessage','Für dieses Benutzerkonto ist keine Sicherheitsfrage hinterlegt oder der Benutzername ist falsch. Bitte eine:n Admin um Zurücksetzen bitten.',true);return}
+    $('pvFrage').textContent='Sicherheitsfrage: '+data.sicherheitsfrage;
+    $('pvSchritt1Form').classList.add('hidden');$('pvSchritt2Form').classList.remove('hidden');
+    msg('pvMessage','');
+  }catch(err){msg('pvMessage','Fehler: '+err.message,true)}
+});
+$('pvSchritt2Form').addEventListener('submit',async e=>{
+  e.preventDefault();
+  msg('pvMessage','Setze neues Passwort …');
+  try{
+    await api('/api/auth/passwort-reset',{method:'POST',body:JSON.stringify({
+      username:pvUsername,sicherheitsantwort:$('pvAntwort').value,neues_passwort:$('pvNeuesPasswort').value,
+    })});
+    msg('pvMessage','Passwort geändert. Du kannst dich jetzt anmelden.');
+    setTimeout(()=>{pvZurueckZurAnmeldung();$('username').value=pvUsername},1200);
+  }catch(err){msg('pvMessage','Antwort oder Benutzername falsch: '+err.message,true)}
+});
+
 async function doLogout(){try{await api('/api/auth/logout',{method:'POST'})}catch(e){}items=[];currentRole=null;for(const k of Object.keys(viewLoaded))delete viewLoaded[k];switchView(false)}
 $('logout').onclick=doLogout;
 $('mehrLogout').onclick=doLogout;
@@ -500,8 +605,9 @@ function switchViewTo(name){
 async function loadView(name){
   if(name==='heute')await loadHeute();
   else if(name==='dienstplan'){$('dienstplanDatum').value=today();await loadDienstplan()}
-  else if(name==='personal'){showPersonalTab(roleAtLeast('schichtleitung')?'reports':'mitarbeiter');if(roleAtLeast('schichtleitung'))await load();await loadMitarbeiter()}
+  else if(name==='personal'){showPersonalTab(roleAtLeast('disponent')?'reports':'mitarbeiter');if(roleAtLeast('disponent'))await load();await loadMitarbeiter()}
   else if(name==='meldungen')await loadMeldungen();
+  else if(name==='einstellungen'){if(roleAtLeast('schichtleitung'))await loadBenutzer()}
 }
 document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>switchViewTo(el.dataset.view)));
 $('bottomMehr').onclick=()=>$('mehrSheet').classList.toggle('hidden');
@@ -531,8 +637,21 @@ async function initViews(){
 }
 
 /* ============================= Heute ============================= */
+async function loadSystemWarnungen(){
+  const wrap=$('systemWarnungen');if(!wrap)return;
+  wrap.replaceChildren();
+  if(!roleAtLeast('schichtleitung'))return;
+  try{
+    const data=await api('/api/system/warnungen');
+    for(const w of (data.warnungen||[])){
+      const p=document.createElement('p');p.className='notice';p.setAttribute('role','alert');p.append(text('⚠️ '+w));
+      wrap.append(p);
+    }
+  }catch(e){}
+}
 async function loadHeute(){
-  if(roleAtLeast('schichtleitung')){
+  await loadSystemWarnungen();
+  if(roleAtLeast('disponent')){
     try{items=await api('/api/reports');renderKpis()}catch(e){}
   }
   try{
@@ -553,7 +672,7 @@ async function loadHeute(){
     if(!m.length){list.append(Object.assign(document.createElement('li'),{className:'muted',textContent:'Keine Meldungen vorhanden.'}))}
     for(const x of m.slice(0,5)){const li=document.createElement('li');li.append(text(x.titel),text(new Date(x.created_at).toLocaleDateString('de-DE')));list.append(li)}
   }catch(e){}
-  if(roleAtLeast('schichtleitung')){
+  if(roleAtLeast('disponent')){
     const list=$('heuteKrankmeldungen');list.replaceChildren();
     const offen=items.filter(x=>x.sick_to>=today());
     if(!offen.length){list.append(Object.assign(document.createElement('li'),{className:'muted',textContent:'Keine offenen Krankmeldungen.'}))}
@@ -683,26 +802,69 @@ async function loadMitarbeiter(){
   catch(err){msg('mitarbeiterMessage','Abruf fehlgeschlagen: '+err.message,true)}
 }
 function renderEmployeeSuggestions(){
-  const list=$('employeeSuggestions');if(!list)return;
-  list.replaceChildren();
-  for(const m of mitarbeiterListe){
-    if(!m.aktiv)continue;
-    const opt=document.createElement('option');opt.value=m.nachname+', '+m.vorname;list.append(opt);
+  for(const listId of ['employeeSuggestions','employeeSuggestionsDienstplan']){
+    const list=$(listId);if(!list)continue;
+    list.replaceChildren();
+    for(const m of mitarbeiterListe){
+      if(!m.aktiv)continue;
+      const opt=document.createElement('option');
+      opt.value=listId==='employeeSuggestions'?(m.nachname+', '+m.vorname):(m.vorname+' '+m.nachname);
+      list.append(opt);
+    }
   }
 }
+function mitarbeiterGefiltert(){
+  const q=($('mitarbeiterSuche').value||'').trim().toLocaleLowerCase('de-DE');
+  if(!q)return mitarbeiterListe;
+  return mitarbeiterListe.filter(m=>(m.vorname+' '+m.nachname).toLocaleLowerCase('de-DE').includes(q));
+}
+$('mitarbeiterSuche').addEventListener('input',renderMitarbeiter);
 function renderMitarbeiter(){
   const body=$('mitarbeiterEntries');body.replaceChildren();
-  for(const m of mitarbeiterListe){
+  const rows=mitarbeiterGefiltert();
+  for(const m of rows){
     const tr=body.insertRow();
     cell(tr,m.nachname+', '+m.vorname);cell(tr,m.personalnummer||'–');cell(tr,m.funktion||'–');cell(tr,m.email||'–');cell(tr,m.telefon||'–');
     const statusCell=tr.insertCell();const pill=document.createElement('span');pill.className='pill'+(m.aktiv?' done':'');pill.textContent=m.aktiv?'Aktiv':'Inaktiv';statusCell.append(pill);
-    const actionCell=tr.insertCell();actionCell.dataset.minRole='schichtleitung';actionCell.classList.toggle('hidden',!roleAtLeast('schichtleitung'));
-    const verlauf=document.createElement('button');verlauf.className='secondary';verlauf.textContent='Verlauf';verlauf.onclick=()=>zeigeMitarbeiterVerlauf(m);actionCell.append(verlauf,document.createTextNode(' '));
+    const actionCell=tr.insertCell();actionCell.dataset.minRole='disponent';actionCell.classList.toggle('hidden',!roleAtLeast('disponent'));
+    if(roleAtLeast('schichtleitung')){
+      const verlauf=document.createElement('button');verlauf.className='secondary';verlauf.textContent='Verlauf';verlauf.onclick=()=>zeigeMitarbeiterVerlauf(m);actionCell.append(verlauf,document.createTextNode(' '));
+    }
     const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>editMitarbeiter(m);actionCell.append(edit,document.createTextNode(' '));
     const del=document.createElement('button');del.className='danger';del.textContent='Löschen';del.onclick=()=>deleteMitarbeiter(m);actionCell.append(del);
   }
-  msg('mitarbeiterMessage',mitarbeiterListe.length+' Mitarbeiter:in(nen) geladen.');
+  msg('mitarbeiterMessage',rows.length+' von '+mitarbeiterListe.length+' Mitarbeiter:in(nen) angezeigt.');
 }
+async function ladeMitarbeiterDuplikate(){
+  const wrap=$('mitarbeiterDuplikateWrap'),liste=$('mitarbeiterDuplikateListe');
+  wrap.classList.remove('hidden');
+  liste.replaceChildren();liste.append(text('Lädt …'));
+  try{
+    const gruppen=await api('/api/mitarbeiter/duplikate');
+    liste.replaceChildren();
+    if(!gruppen.length){liste.append(Object.assign(document.createElement('p'),{className:'small muted',textContent:'Keine Dubletten gefunden.'}));return}
+    for(const g of gruppen){
+      const box=document.createElement('div');box.className='boardcard';
+      const h4=document.createElement('h4');h4.append(text(g.grund==='exakt'?'Gleicher Name':'Ähnlicher Name (möglicher Tippfehler)'));box.append(h4);
+      const ul=document.createElement('ul');ul.className='linklist';
+      for(const m of g.mitarbeiter){
+        const li=document.createElement('li');
+        li.append(text(m.vorname+' '+m.nachname+(m.personalnummer?(' · Pers.-Nr. '+m.personalnummer):'')+(m.aktiv?'':' · Inaktiv')));
+        if(roleAtLeast('disponent')){
+          const bearb=document.createElement('button');bearb.className='secondary small';bearb.textContent='Bearbeiten';bearb.onclick=()=>editMitarbeiter(m);
+          const loesch=document.createElement('button');loesch.className='danger small';loesch.textContent='Löschen';loesch.onclick=()=>deleteMitarbeiter(m);
+          li.append(bearb,document.createTextNode(' '),loesch);
+        }
+        ul.append(li);
+      }
+      box.append(ul);liste.append(box);
+    }
+  }catch(err){liste.replaceChildren();liste.append(Object.assign(document.createElement('p'),{className:'error small',textContent:'Fehler: '+err.message}))}
+}
+$('mitarbeiterDuplikateToggle').onclick=()=>{
+  if($('mitarbeiterDuplikateWrap').classList.contains('hidden'))ladeMitarbeiterDuplikate();
+  else $('mitarbeiterDuplikateWrap').classList.add('hidden');
+};
 const MITARBEITER_EREIGNIS_LABEL={krank_gemeldet:'Krank gemeldet',krankmeldung_aktualisiert:'Krankmeldung aktualisiert',krankmeldung_geloescht:'Krankmeldung gelöscht',dienstplan_krank_aufgehoben:'Krank-Status aufgehoben',stammdaten_angelegt:'Stammdaten angelegt',stammdaten_geaendert:'Stammdaten geändert',stammdaten_deaktiviert:'Stammdaten deaktiviert',stammdaten_geloescht:'Stammdaten gelöscht'};
 async function zeigeMitarbeiterVerlauf(m){
   $('mitarbeiterVerlaufName').textContent=m.vorname+' '+m.nachname;
@@ -760,7 +922,7 @@ function renderAudit(){
   const tr=body.insertRow();cell(tr,new Date(r.event_at).toLocaleString('de-DE'));
   cell(tr,({INSERT:'Neu angelegt',UPDATE:'Bearbeitet',DELETE:'Gelöscht'})[r.action]||r.action);
   cell(tr,r.new_data?.employee||r.old_data?.employee||'–');
-  cell(tr,({admin:'Admin',disposition:'Schichtleitung',schichtleitung:'Schichtleitung',mitarbeiter:'Mitarbeiter',system:'System'})[r.actor_role]||r.actor_role||'Unbekannt');
+  cell(tr,ROLLEN_LABEL[r.actor_role]||r.actor_role||'Unbekannt');
   const td=tr.insertCell();td.className='audit-item';
   const changes=auditChanges(r);
   if(!changes.length)td.append(text('Keine fachliche Änderung'));
@@ -808,6 +970,34 @@ $('dienstplanImportForm').onsubmit=async e=>{
   }catch(err){msg('dienstplanImportMessage','Import fehlgeschlagen: '+err.message,true)}
 };
 $('dienstplanLaden').onclick=loadDienstplan;
+$('dienstplanGeloeschteAnzeigen').addEventListener('change',loadDienstplan);
+$('dienstplanHinzufuegenOeffnen').onclick=()=>{
+  $('dienstplanHinzufuegenForm').reset();$('dpAddKrank').value='false';$('dpAddBulli').value='false';
+  msg('dienstplanHinzufuegenMessage','');
+  $('dienstplanHinzufuegenCard').classList.remove('hidden');
+  $('dienstplanHinzufuegenCard').scrollIntoView({behavior:'smooth',block:'center'});
+};
+$('dpHinzufuegenAbbrechen').onclick=()=>$('dienstplanHinzufuegenCard').classList.add('hidden');
+$('dienstplanHinzufuegenForm').onsubmit=async e=>{
+  e.preventDefault();
+  const payload={
+    datum:$('dienstplanDatum').value||today(),
+    mitarbeiter_name:$('dpAddName').value.trim(),
+    dienst_kategorie:$('dpAddKategorie').value.trim()||null,
+    start_zeit:$('dpAddBeginn').value||null,
+    end_zeit:$('dpAddEnde').value||null,
+    ist_krank:$('dpAddKrank').value==='true',
+    ist_bulmorfahrer:$('dpAddBulli').value==='true',
+    notiz:$('dpAddNotiz').value.trim(),
+  };
+  if(!payload.mitarbeiter_name){msg('dienstplanHinzufuegenMessage','Bitte einen Namen angeben.',true);return}
+  try{
+    await api('/api/dienstplan',{method:'POST',body:JSON.stringify(payload)});
+    msg('dienstplanHinzufuegenMessage','Hinzugefügt.');
+    $('dienstplanHinzufuegenCard').classList.add('hidden');
+    await loadDienstplan();
+  }catch(err){msg('dienstplanHinzufuegenMessage','Hinzufügen fehlgeschlagen: '+err.message,true)}
+};
 $('dienstplanExport').onclick=async()=>{
   const tag=$('dienstplanDatum').value||today();
   msg('dienstplanMessage','Export wird erstellt …');
@@ -824,7 +1014,8 @@ for(const id of ['dienstplanSuche','dienstplanStatusFilter','dienstplanSortierun
 async function loadDienstplan(){
   const tag=$('dienstplanDatum').value||today();
   try{
-    dienstplanRows=await api('/api/dienstplan?von='+tag+'&bis='+tag);
+    const mitGeloeschten=$('dienstplanGeloeschteAnzeigen').checked;
+    dienstplanRows=await api('/api/dienstplan?von='+tag+'&bis='+tag+(mitGeloeschten?'&mit_geloeschten=true':''));
     renderDienstplan();
     renderDienstplanZusammenfassung();
     const quelle=await api('/api/dienstplan/quelle?datum='+tag);
@@ -934,12 +1125,19 @@ function renderDienstplan(){
   const body=$('dienstplanEntries');body.replaceChildren();
   let vorherigeDispo=null;
   let vorherigeKategorie=null;
+  let vorherigeSchichtTyp=null;
   // Kleine Trennlinien innerhalb der Standard-Sortierung, zusätzlich zur
   // bestehenden "Dispo"-Trennlinie: markiert den Beginn der T10-, T8- und
   // N10-Gruppe (siehe dienstplan_sortierung.py).
   const TRENNLINIEN_KATEGORIEN=new Set(['T10','T8','N10']);
   for(const e of rows){
     const istStandard=$('dienstplanSortierung').value==='standard';
+    // Klare Trennung Tagdienst/Nachtdienst, genau wie die bestehende
+    // "Dispo"-Trennlinie unten - nur beim Wechsel Tag -> Nacht sichtbar.
+    if(istStandard && e.schicht_typ==='nacht' && vorherigeSchichtTyp==='tag'){
+      const divider=body.insertRow();divider.className='dp-divider';const td=divider.insertCell();td.colSpan=8;td.append(text('Nachtdienst'));
+    }
+    vorherigeSchichtTyp=e.schicht_typ;
     if(istStandard && TRENNLINIEN_KATEGORIEN.has(e.effektive_kategorie) && e.effektive_kategorie!==vorherigeKategorie){
       const divider=body.insertRow();divider.className='dp-divider dp-divider-klein';const td=divider.insertCell();td.colSpan=8;td.append(text(e.effektive_kategorie));
     }
@@ -950,6 +1148,7 @@ function renderDienstplan(){
     vorherigeDispo=e.ist_dispo;
     const tr=body.insertRow();
     tr.classList.toggle('dp-virtuell',!!e.virtuell);
+    tr.classList.toggle('dp-geloescht',!!e.geloescht);
     tr.classList.toggle('dp-stark-abweichend',starkAbweichendIds.has(String(e.id)));
     cell(tr,e.mitarbeiter_name);cell(tr,e.dienst_kategorie||(e.effektive_kategorie?'(KRANK, eig. '+e.effektive_kategorie+')':'–'));cell(tr,e.start_zeit||'–');cell(tr,e.end_zeit||'–');
     const statusCell=tr.insertCell();
@@ -958,11 +1157,13 @@ function renderDienstplan(){
     if(e.zeit_abweichend){const p=document.createElement('span');p.className='pill info';p.textContent='Abweichende Zeit';statusCell.append(p,document.createTextNode(' '))}
     if(starkAbweichendIds.has(String(e.id))){const p=document.createElement('span');p.className='pill warn';p.title='Beginn oder Ende weicht um mehr als 1 Std. vom Rest der eigenen Dienstart ab.';p.textContent='> 1 Std. vom Rest abweichend';statusCell.append(p,document.createTextNode(' '))}
     if(e.virtuell){const p=document.createElement('span');p.className='pill info';p.title='Aus laufender Krankmeldung übernommen, noch kein Dienstplan für diesen Tag importiert.';p.textContent='Ohne Dienstplan';statusCell.append(p,document.createTextNode(' '))}
-    if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend&&!e.virtuell&&!starkAbweichendIds.has(String(e.id)))statusCell.append(text('–'));
+    if(e.manuell_hinzugefuegt){const p=document.createElement('span');p.className='pill info';p.title='Manuell zum Dienstplan hinzugefügt (nicht aus dem Excel-Import).';p.textContent='Hinzugefügt';statusCell.append(p,document.createTextNode(' '))}
+    if(e.geloescht){const p=document.createElement('span');p.className='pill warn';p.title='Aus dem Dienstplan entfernt (weich gelöscht, über "Wiederherstellen" rückgängig machbar).';p.textContent='Entfernt';statusCell.append(p,document.createTextNode(' '))}
+    if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend&&!e.virtuell&&!e.manuell_hinzugefuegt&&!e.geloescht&&!starkAbweichendIds.has(String(e.id)))statusCell.append(text('–'));
     cell(tr,e.notiz||'–');
     const rechnungCell=tr.insertCell();
     const ausgeschlossen=!!e.ausgeschlossen;
-    if(!e.virtuell&&roleAtLeast('schichtleitung')){
+    if(!e.virtuell&&roleAtLeast('disponent')){
       const rechnungBtn=document.createElement('button');
       rechnungBtn.className='secondary small';
       rechnungBtn.textContent=ausgeschlossen?'Wieder einrechnen':'Ausschließen';
@@ -978,10 +1179,30 @@ function renderDienstplan(){
       rechnungCell.append(rechnungBtn);
     }
     if(ausgeschlossen){const p=document.createElement('span');p.className='pill';p.style.marginLeft='6px';p.textContent='ausgeschlossen';rechnungCell.append(p)}
-    else if(e.virtuell||!roleAtLeast('schichtleitung'))rechnungCell.append(text('–'));
-    const actionCell=tr.insertCell();actionCell.dataset.minRole='schichtleitung';actionCell.classList.toggle('hidden',!roleAtLeast('schichtleitung'));
+    else if(e.virtuell||!roleAtLeast('disponent'))rechnungCell.append(text('–'));
+    const actionCell=tr.insertCell();actionCell.dataset.minRole='disponent';actionCell.classList.toggle('hidden',!roleAtLeast('disponent'));
     if(e.virtuell){actionCell.append(text('–'))}
-    else{const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit)}
+    else{
+      if(!e.geloescht){
+        const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit,document.createTextNode(' '));
+        const del=document.createElement('button');del.className='danger';del.textContent='Entfernen';
+        del.onclick=async()=>{
+          if(!window.confirm('"'+e.mitarbeiter_name+'" aus dem Dienstplan entfernen? Bleibt als "Entfernt" nachvollziehbar und kann wiederhergestellt werden.'))return;
+          del.disabled=true;
+          try{await api('/api/dienstplan/'+e.id,{method:'DELETE'});await loadDienstplan()}
+          catch(err){del.disabled=false;msg('dienstplanMessage','Entfernen fehlgeschlagen: '+err.message,true)}
+        };
+        actionCell.append(del);
+      }else{
+        const wh=document.createElement('button');wh.className='secondary';wh.textContent='Wiederherstellen';
+        wh.onclick=async()=>{
+          wh.disabled=true;
+          try{await api('/api/dienstplan/'+e.id+'/wiederherstellen',{method:'POST'});await loadDienstplan()}
+          catch(err){wh.disabled=false;msg('dienstplanMessage','Wiederherstellen fehlgeschlagen: '+err.message,true)}
+        };
+        actionCell.append(wh);
+      }
+    }
   }
   msg('dienstplanMessage',rows.length+' von '+dienstplanRows.length+' Eintrag/Einträgen angezeigt.');
 }
@@ -1026,7 +1247,7 @@ $('dienstplanEditForm').onsubmit=async e=>{
     await api('/api/dienstplan/'+dienstplanEditingId,{method:'PUT',body:JSON.stringify(payload)});
     msg('dienstplanEditMessage',auchKrankmeldungLoeschen?'Gespeichert, Krankmeldung gelöscht.':'Gespeichert.');
     $('dienstplanEditCard').classList.add('hidden');
-    if(roleAtLeast('admin')&&!$('dienstplanAuditWrap').classList.contains('hidden'))await loadDienstplanAudit();
+    if(roleAtLeast('schichtleitung')&&!$('dienstplanAuditWrap').classList.contains('hidden'))await loadDienstplanAudit();
     if(!warKrank&&istJetztKrank)openKrankPopup(dienstplanEditingEntry);
     dienstplanEditingId=null;dienstplanEditingEntry=null;
     await loadDienstplan();
@@ -1094,7 +1315,7 @@ async function loadDienstplanAudit(){
       const tr=body.insertRow();
       cell(tr,new Date(r.event_at).toLocaleString('de-DE'));
       cell(tr,r.mitarbeiter_name||'–');
-      cell(tr,r.actor_username||({admin:'Admin',schichtleitung:'Schichtleitung'})[r.actor_role]||r.actor_role);
+      cell(tr,r.actor_username||ROLLEN_LABEL[r.actor_role]||r.actor_role);
       const td=tr.insertCell();td.className='audit-item';
       const before=r.old_data||{},after=r.new_data||{};
       const changes=Object.keys(feldnamen).filter(k=>JSON.stringify(before[k]??null)!==JSON.stringify(after[k]??null));
@@ -1127,7 +1348,7 @@ function renderMeldungen(rows){
     const h4=document.createElement('h4');h4.append(text((m.angeheftet?'📌 ':'')+m.titel));div.append(h4);
     const meta=document.createElement('div');meta.className='meta';meta.append(text(m.autor+' · '+new Date(m.created_at).toLocaleString('de-DE')));div.append(meta);
     const p=document.createElement('p');p.append(text(m.text||''));div.append(p);
-    if(roleAtLeast('schichtleitung')){
+    if(roleAtLeast('disponent')){
       const actions=document.createElement('div');actions.className='actions';
       const del=document.createElement('button');del.className='danger';del.textContent='Löschen';del.onclick=async()=>{if(!window.confirm('Meldung "'+m.titel+'" löschen?'))return;try{await api('/api/meldungen/'+m.id,{method:'DELETE'});await loadMeldungen()}catch(err){msg('meldungenMessage','Löschen fehlgeschlagen: '+err.message,true)}};
       actions.append(del);div.append(actions);
@@ -1137,6 +1358,72 @@ function renderMeldungen(rows){
   msg('meldungenMessage',rows.length+' Meldung(en).');
 }
 
+/* ============================= Benutzerverwaltung ============================= */
+let benutzerListe=[],benutzerEditing=null;
+function resetBenutzerForm(){
+  benutzerEditing=null;$('benutzerForm').reset();$('buAktiv').value='true';$('buRolle').value='mitarbeiter';
+  $('buUsername').disabled=false;
+  $('benutzerFormTitle').textContent='Benutzerkonto anlegen';$('buSaveBtn').textContent='Speichern';
+  $('buPasswordLabel').textContent='Passwort';$('buPassword').required=true;
+  $('buAntwortLabel').textContent='Antwort auf Sicherheitsfrage';
+  msg('benutzerFormMessage','');
+}
+$('benutzerForm').onsubmit=async e=>{
+  e.preventDefault();
+  const payload={
+    username:$('buUsername').value.trim(),anzeigename:$('buAnzeigename').value.trim(),
+    rolle:$('buRolle').value,aktiv:$('buAktiv').value==='true',
+    sicherheitsfrage:$('buFrage').value.trim(),sicherheitsantwort:$('buAntwort').value.trim(),
+  };
+  const password=$('buPassword').value;
+  if(password)payload.password=password;
+  $('buSaveBtn').disabled=true;
+  try{
+    if(benutzerEditing){
+      if(!password)delete payload.password;
+      delete payload.username;
+      await api('/api/benutzer/'+benutzerEditing,{method:'PUT',body:JSON.stringify(payload)});
+    }else{
+      if(!password){msg('benutzerFormMessage','Bitte ein Passwort vergeben.',true);$('buSaveBtn').disabled=false;return}
+      await api('/api/benutzer',{method:'POST',body:JSON.stringify(payload)});
+    }
+    resetBenutzerForm();msg('benutzerFormMessage','Gespeichert.');await loadBenutzer();
+  }catch(err){msg('benutzerFormMessage','Speichern fehlgeschlagen: '+err.message,true)}
+  finally{$('buSaveBtn').disabled=false}
+};
+$('buResetBtn').onclick=resetBenutzerForm;
+async function loadBenutzer(){
+  try{benutzerListe=await api('/api/benutzer');renderBenutzer()}
+  catch(err){msg('benutzerMessage','Abruf fehlgeschlagen: '+err.message,true)}
+}
+function renderBenutzer(){
+  const body=$('benutzerEntries');body.replaceChildren();
+  for(const b of benutzerListe){
+    const tr=body.insertRow();
+    cell(tr,b.username);cell(tr,b.anzeigename||'–');cell(tr,ROLLEN_LABEL[b.rolle]||b.rolle);
+    const statusCell=tr.insertCell();const pill=document.createElement('span');pill.className='pill'+(b.aktiv?' done':'');pill.textContent=b.aktiv?'Aktiv':'Inaktiv';statusCell.append(pill);
+    cell(tr,b.hat_sicherheitsfrage?'Hinterlegt':'–');
+    const actionCell=tr.insertCell();
+    const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>editBenutzer(b);actionCell.append(edit,document.createTextNode(' '));
+    const toggle=document.createElement('button');toggle.className=b.aktiv?'danger':'secondary';toggle.textContent=b.aktiv?'Deaktivieren':'Aktivieren';
+    toggle.onclick=async()=>{
+      toggle.disabled=true;
+      try{await api('/api/benutzer/'+b.id,{method:'PUT',body:JSON.stringify({aktiv:!b.aktiv})});await loadBenutzer()}
+      catch(err){toggle.disabled=false;msg('benutzerMessage','Speichern fehlgeschlagen: '+err.message,true)}
+    };
+    actionCell.append(toggle);
+  }
+  msg('benutzerMessage',benutzerListe.length+' Benutzerkonto(en) geladen. Konten werden bewusst nicht gelöscht, sondern deaktiviert.');
+}
+function editBenutzer(b){
+  benutzerEditing=b.id;
+  $('buUsername').value=b.username;$('buUsername').disabled=true;
+  $('buAnzeigename').value=b.anzeigename||'';$('buRolle').value=b.rolle;$('buAktiv').value=String(b.aktiv);
+  $('buPassword').value='';$('buPassword').required=false;$('buPasswordLabel').textContent='Neues Passwort (leer lassen = unverändert)';
+  $('buFrage').value='';$('buAntwort').value='';$('buAntwortLabel').textContent='Neue Antwort (leer lassen = unverändert)'+(b.hat_sicherheitsfrage?' – aktuell hinterlegt':'');
+  $('benutzerFormTitle').textContent='Benutzerkonto bearbeiten: '+b.username;$('buSaveBtn').textContent='Änderungen speichern';
+  window.scrollTo({top:0,behavior:'smooth'});msg('benutzerFormMessage','Bearbeitungsmodus aktiv.');
+}
 startSession();
 </script>
 </body>

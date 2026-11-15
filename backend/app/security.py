@@ -18,3 +18,10 @@ def verify_password(password: str, password_hash: str) -> bool:
         return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("ascii"))
     except Exception:
         return False
+
+
+def normalize_answer(answer: str) -> str:
+    """Groß-/Kleinschreibung und umgebende Leerzeichen spielen bei der
+    Sicherheitsantwort der Passwort-Reset-Funktion keine Rolle
+    (nutzerfreundlicher), siehe routers/auth.py und routers/benutzer.py."""
+    return (answer or "").strip().casefold()

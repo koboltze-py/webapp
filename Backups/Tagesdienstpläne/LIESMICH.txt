@@ -1,21 +1,26 @@
 Dieser Ordner enthält automatisch erzeugte Excel-Schnappschüsse des
 Tagesdienstplans - bei jedem Excel-Import **und** bei jeder manuellen
-Änderung (Krank/Bulli-Fahrer:in/Zeiten/Notiz) wird der betroffene Tag
-erneut als Datei hier abgelegt, damit der Verlauf nachvollziehbar bleibt.
+Änderung (Krank/Bulli-Fahrer:in/Zeiten/Notiz/manuell hinzugefügt oder
+entfernt) wird der betroffene Tag erneut als Datei hier abgelegt.
 
-Struktur: ein Unterordner je Datum (TT.MM.JJJJ), darin eine Datei je
-Speicherpunkt, benannt nach Datum und Uhrzeit, z. B.:
+Seit version2.1 gilt: Struktur ist ein Unterordner je Jahr, darin ein
+Unterordner je Monat, darin GENAU EINE Datei je Tag - diese wird bei jeder
+weiteren Änderung überschrieben (kein separater Ordner/keine separate
+Datei je Änderung mehr), z. B.:
 
 ```
-14.11.2026\14.11.2026_14-05-12.xlsx
-14.11.2026\14.11.2026_14-07-48.xlsx   (nach einer weiteren Änderung)
+2026\11_November\14.11.2026.xlsx
 ```
+
+Den laufenden Änderungsverlauf (wer hat wann was geändert) gibt es
+stattdessen im Ordner `Backups\Tagesprotokoll` (gleiche Ordnerstruktur,
+aber als wachsendes Protokoll statt überschriebener Schnappschuss).
 
 Die Dateien entsprechen im Format der echten Tagesdienstplan-Vorlage
 (siehe backend\app\dienstplan_export.py). Das Speichern ist "best effort":
 Schlägt es fehl (z. B. kein Schreibzugriff), wird die eigentliche
 Import-/Änderungs-Operation dadurch nicht beeinträchtigt - es gibt dann
-nur keinen neuen Schnappschuss für diesen Speicherpunkt.
+nur keinen aktualisierten Schnappschuss für diesen Speicherpunkt.
 
 Datenschutz: Diese Dateien enthalten Mitarbeiternamen, Dienstzeiten und
 Krank-Status. Zugriff beschränken und nach Löschkonzept entsorgen.

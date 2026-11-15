@@ -12,11 +12,18 @@ from fastapi.responses import Response
 from .. import supabase_client as sb
 from ..aktivitaet import record_activity
 from ..config import settings
-from ..deps import get_current_role, require_admin, require_schichtleitung
+from ..deps import get_current_role, require_disponent, require_schichtleitung
 from ..excel_export import export_tabelle_excel
+from ..mitarbeiter_duplikate import finde_duplikat_gruppen
 from ..mitarbeiter_historie import list_alle_ereignisse, list_ereignisse, record_ereignis
 from ..modules_repository import get_mitarbeiter_repository
-from ..schemas import MitarbeiterCreate, MitarbeiterHistorieOut, MitarbeiterOut, MitarbeiterUpdate
+from ..schemas import (
+    MitarbeiterCreate,
+    MitarbeiterDuplikatGruppe,
+    MitarbeiterHistorieOut,
+    MitarbeiterOut,
+    MitarbeiterUpdate,
+)
 
 router = APIRouter(prefix="/api/mitarbeiter", tags=["mitarbeiter"])
 
@@ -32,8 +39,29 @@ def _id(row: Any) -> Any:
 
 
 @router.get("", response_model=List[MitarbeiterOut])
-def list_mitarbeiter(repo=Depends(get_mitarbeiter_repository), role: str = Depends(get_current_role)):
-    return repo.list_mitarbeiter()
+def list_mitarbeiter(
+    suche: Optional[str] = None,
+    repo=Depends(get_mitarbeiter_repository),
+    role: str = Depends(get_current_role),
+):
+    """`suche` filtert nach Vor- und/oder Nachname (Groß-/Kleinschreibung
+    egal, Teilstring-Treffer), siehe Stammdaten-Suche im Frontend."""
+    rows = repo.list_mitarbeiter()
+    if suche and suche.strip():
+        q = suche.strip().casefold()
+        rows = [m for m in rows if q in _name(m).casefold()]
+    return rows
+
+
+@router.get("/duplikate", response_model=List[MitarbeiterDuplikatGruppe])
+def list_mitarbeiter_duplikate(
+    repo=Depends(get_mitarbeiter_repository),
+    role: str = Depends(require_disponent),
+):
+    """Gruppiert vermutlich doppelt angelegte Stammdatensätze (exakt
+    gleicher Name oder Tippfehler-Ähnlichkeit, siehe
+    mitarbeiter_duplikate.py) zur manuellen Prüfung/Bereinigung."""
+    return finde_duplikat_gruppen(repo.list_mitarbeiter())
 
 
 @router.post("", response_model=MitarbeiterOut, status_code=status.HTTP_201_CREATED)
@@ -41,7 +69,7 @@ def create_mitarbeiter(
     payload: MitarbeiterCreate,
     request: Request,
     repo=Depends(get_mitarbeiter_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     actor_username = request.session.get("username", role)
     row = repo.create_mitarbeiter(payload.model_dump())
@@ -64,7 +92,7 @@ def update_mitarbeiter(
     payload: MitarbeiterUpdate,
     request: Request,
     repo=Depends(get_mitarbeiter_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     actor_username = request.session.get("username", role)
     row = repo.update_mitarbeiter(mitarbeiter_id, payload.model_dump())
@@ -87,7 +115,7 @@ def delete_mitarbeiter(
     mitarbeiter_id: str,
     request: Request,
     repo=Depends(get_mitarbeiter_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     bestehende = {str(_id(m)): m for m in repo.list_mitarbeiter()}
     name = _name(bestehende[mitarbeiter_id]) if mitarbeiter_id in bestehende else ""
@@ -132,7 +160,7 @@ EREIGNIS_LABEL = {
 @router.get("/historie/export")
 def export_mitarbeiter_historie(
     mitarbeiter_id: Optional[str] = None,
-    role: str = Depends(require_admin),
+    role: str = Depends(require_schichtleitung),
 ):
     """Excel-Export der Mitarbeiter-Historie (siehe mitarbeiter_historie.py) -
     standardmäßig über ALLE Mitarbeitenden, optional auf eine Person

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, stat
 from fastapi.responses import Response
 
 from ..aktivitaet import record_activity
-from ..deps import get_current_role, require_admin, require_schichtleitung
+from ..deps import get_current_role, require_disponent, require_schichtleitung
 from ..dienstplan_export import export_dienstplan_excel
 from ..dienstplan_parser import parse_dienstplan_excel
 from ..dienstplan_sortierung import kategorisiere_und_sortiere
@@ -24,18 +24,21 @@ from ..modules_repository import get_dienstplan_repository, get_mitarbeiter_repo
 from ..repository import ReportsRepository, get_reports_repository
 from ..schemas import (
     DienstplanAuditOut,
+    DienstplanEintragCreate,
     DienstplanEintragOut,
     DienstplanEintragUpdate,
     DienstplanImportResult,
     DienstplanQuelle,
     UnsichereZuordnung,
 )
+from .. import tagesprotokoll
 
 router = APIRouter(prefix="/api/dienstplan", tags=["dienstplan"])
 
 # backend/app/routers/dienstplan.py -> routers -> app -> backend -> Projektordner
 PROJEKT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 TAGESDIENSTPLAN_BACKUP_DIR = PROJEKT_ROOT / "Backups" / "Tagesdienstpläne"
+TAGESPROTOKOLL_BACKUP_DIR = PROJEKT_ROOT / "Backups" / "Tagesprotokoll"
 
 # Für die virtuelle Krank-Überlagerung (siehe _virtuelle_krank_eintraege)
 # maximal betrachteter Zeitraum, um ausufernde Schleifen bei sehr großen
@@ -146,6 +149,7 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "mitarbeiter_id": row.mitarbeiter_id,
         "dienst_kategorie": row.dienst_kategorie, "start_zeit": row.start_zeit, "end_zeit": row.end_zeit,
         "ist_krank": row.ist_krank, "ist_bulmorfahrer": row.ist_bulmorfahrer, "ausgeschlossen": row.ausgeschlossen,
+        "geloescht": row.geloescht, "manuell_hinzugefuegt": row.manuell_hinzugefuegt,
         "notiz": row.notiz, "quelle_datei": row.quelle_datei, "created_at": row.created_at,
     }
 
@@ -163,31 +167,47 @@ def _sichere_tagesdienstplan_snapshot(
 ) -> None:
     """Speichert bei jedem Import und jeder manuellen Änderung automatisch
     eine Excel-Kopie des betroffenen Tages unter
-    Backups/Tagesdienstpläne/<Datum>/<Datum>_<Uhrzeit>.xlsx - rein
-    informativ/als Verlauf gedacht, ein Fehler hierbei darf die eigentliche
-    Import-/Änderungs-Operation nicht verhindern."""
+    Backups/Tagesdienstpläne/<Jahr>/<MM>_<Monat>/<Tag>.xlsx - überschreibt
+    dabei bewusst den vorherigen Stand desselben Tages (kein Verlauf mehr,
+    siehe Tagesprotokoll für den Änderungsverlauf), damit nicht für jede
+    Änderung/jeden Tag eine eigene Datei/ein eigener Ordner entsteht. Ein
+    Fehler hierbei darf die eigentliche Import-/Änderungs-Operation nicht
+    verhindern."""
     try:
         rows = _tagesdaten_sortiert(tag, repo, reports_repo)
         if not rows:
             return
         inhalt = export_dienstplan_excel(tag, rows, ersteller=ersteller)
-        tag_ordner = TAGESDIENSTPLAN_BACKUP_DIR / tag.strftime("%d.%m.%Y")
-        tag_ordner.mkdir(parents=True, exist_ok=True)
-        dateiname = f"{tag.strftime('%d.%m.%Y')}_{datetime.now().strftime('%H-%M-%S')}.xlsx"
-        (tag_ordner / dateiname).write_bytes(inhalt)
+        datei = tagesprotokoll.pfad(TAGESDIENSTPLAN_BACKUP_DIR, tag)
+        datei.parent.mkdir(parents=True, exist_ok=True)
+        datei.write_bytes(inhalt)
     except Exception:  # noqa: BLE001 - Backup ist best-effort, darf Hauptvorgang nicht stoeren
         pass
+
+
+def _protokolliere_tagesaenderung(
+    tag: date, *, aktion: str, mitarbeiter_name: str = "", actor_username: str = "", actor_role: str = "",
+    beschreibung: str = "",
+) -> None:
+    """Hängt eine Zeile an Backups/Tagesprotokoll/<Jahr>/<MM>_<Monat>/<Tag>.xlsx
+    an - ein lückenloses, menschenlesbares Protokoll aller Dienstplan-
+    Änderungen DIESES Tages (siehe tagesprotokoll.py)."""
+    tagesprotokoll.protokolliere(
+        TAGESPROTOKOLL_BACKUP_DIR, tag, aktion=aktion, mitarbeiter_name=mitarbeiter_name,
+        actor_username=actor_username, actor_role=actor_role, beschreibung=beschreibung,
+    )
 
 
 @router.get("", response_model=List[DienstplanEintragOut])
 def list_dienstplan(
     von: Optional[date] = None,
     bis: Optional[date] = None,
+    mit_geloeschten: bool = False,
     repo=Depends(get_dienstplan_repository),
     reports_repo: ReportsRepository = Depends(get_reports_repository),
     role: str = Depends(get_current_role),
 ):
-    rows = [_row_to_dict(r) for r in repo.list_eintraege(von, bis)]
+    rows = [_row_to_dict(r) for r in repo.list_eintraege(von, bis, mit_geloeschten)]
     rows.extend(_virtuelle_krank_eintraege(repo, reports_repo, von, bis))
     return kategorisiere_und_sortiere(rows)
 
@@ -229,9 +249,96 @@ def export_dienstplan(
 @router.get("/audit", response_model=List[DienstplanAuditOut])
 def list_dienstplan_audit(
     repo=Depends(get_dienstplan_repository),
-    role: str = Depends(require_admin),
+    role: str = Depends(require_schichtleitung),
 ):
     return repo.list_audit()
+
+
+@router.post("", response_model=DienstplanEintragOut, status_code=status.HTTP_201_CREATED)
+def create_dienstplan_eintrag(
+    payload: DienstplanEintragCreate,
+    request: Request,
+    repo=Depends(get_dienstplan_repository),
+    reports_repo: ReportsRepository = Depends(get_reports_repository),
+    role: str = Depends(require_disponent),
+):
+    """Fügt eine einzelne Person manuell zu einem (bereits bestehenden)
+    Tagesdienstplan hinzu, unabhängig von einem Excel-Import (siehe
+    DienstplanEintragOut.manuell_hinzugefuegt - im Frontend als Hinweis
+    sichtbar)."""
+    actor_username = request.session.get("username", role)
+    data = payload.model_dump(exclude={"datum"})
+    row = repo.create_eintrag(payload.datum, data)
+    ergebnis = kategorisiere_und_sortiere([_row_to_dict(row)])[0]
+    _sichere_tagesdienstplan_snapshot(payload.datum, repo, reports_repo, actor_username)
+    _protokolliere_tagesaenderung(
+        payload.datum, aktion="HINZUGEFÜGT", mitarbeiter_name=payload.mitarbeiter_name,
+        actor_username=actor_username, actor_role=role,
+        beschreibung=f"'{payload.mitarbeiter_name}' manuell zum Dienstplan hinzugefügt.",
+    )
+    record_activity(
+        request, aktion="CREATE", bereich="Dienstplan",
+        entity_typ="dienstplan", entity_id=ergebnis["id"], entity_bezeichnung=payload.mitarbeiter_name,
+        beschreibung=f"'{payload.mitarbeiter_name}' manuell zum Dienstplan vom {payload.datum} hinzugefügt.",
+    )
+    return ergebnis
+
+
+@router.delete("/{eintrag_id}", response_model=DienstplanEintragOut)
+def delete_dienstplan_eintrag(
+    eintrag_id: str,
+    request: Request,
+    repo=Depends(get_dienstplan_repository),
+    reports_repo: ReportsRepository = Depends(get_reports_repository),
+    role: str = Depends(require_disponent),
+):
+    """Entfernt eine Person weich (nicht endgültig) aus einem Tagesdienstplan
+    - bleibt in der Datenbank erhalten und als 'gelöscht' gekennzeichnet
+    (siehe DienstplanEintragOut.geloescht), damit im Frontend nachvollziehbar
+    bleibt, dass/wer sie entfernt hat; über /wiederherstellen rückgängig
+    machbar. Siehe auch Tagesprotokoll für die laufende Protokollierung."""
+    actor_username = request.session.get("username", role)
+    vorher = _row_to_dict(repo.get_eintrag(eintrag_id))
+    row = repo.update_eintrag(eintrag_id, {"geloescht": True}, role, actor_username)
+    ergebnis = kategorisiere_und_sortiere([_row_to_dict(row)])[0]
+    _sichere_tagesdienstplan_snapshot(ergebnis["datum"], repo, reports_repo, actor_username)
+    _protokolliere_tagesaenderung(
+        ergebnis["datum"], aktion="ENTFERNT", mitarbeiter_name=ergebnis["mitarbeiter_name"],
+        actor_username=actor_username, actor_role=role,
+        beschreibung=f"'{ergebnis['mitarbeiter_name']}' aus dem Dienstplan vom {ergebnis['datum']} entfernt.",
+    )
+    record_activity(
+        request, aktion="DELETE", bereich="Dienstplan",
+        entity_typ="dienstplan", entity_id=eintrag_id, entity_bezeichnung=ergebnis["mitarbeiter_name"],
+        beschreibung=f"'{ergebnis['mitarbeiter_name']}' aus dem Dienstplan vom {ergebnis['datum']} entfernt (weich gelöscht).",
+    )
+    return ergebnis
+
+
+@router.post("/{eintrag_id}/wiederherstellen", response_model=DienstplanEintragOut)
+def restore_dienstplan_eintrag(
+    eintrag_id: str,
+    request: Request,
+    repo=Depends(get_dienstplan_repository),
+    reports_repo: ReportsRepository = Depends(get_reports_repository),
+    role: str = Depends(require_disponent),
+):
+    """Macht ein vorheriges delete_dienstplan_eintrag rückgängig."""
+    actor_username = request.session.get("username", role)
+    row = repo.update_eintrag(eintrag_id, {"geloescht": False}, role, actor_username)
+    ergebnis = kategorisiere_und_sortiere([_row_to_dict(row)])[0]
+    _sichere_tagesdienstplan_snapshot(ergebnis["datum"], repo, reports_repo, actor_username)
+    _protokolliere_tagesaenderung(
+        ergebnis["datum"], aktion="WIEDERHERGESTELLT", mitarbeiter_name=ergebnis["mitarbeiter_name"],
+        actor_username=actor_username, actor_role=role,
+        beschreibung=f"'{ergebnis['mitarbeiter_name']}' im Dienstplan vom {ergebnis['datum']} wiederhergestellt.",
+    )
+    record_activity(
+        request, aktion="UPDATE", bereich="Dienstplan",
+        entity_typ="dienstplan", entity_id=eintrag_id, entity_bezeichnung=ergebnis["mitarbeiter_name"],
+        beschreibung=f"'{ergebnis['mitarbeiter_name']}' im Dienstplan vom {ergebnis['datum']} wiederhergestellt.",
+    )
+    return ergebnis
 
 
 @router.put("/{eintrag_id}", response_model=DienstplanEintragOut)
@@ -241,7 +348,7 @@ def update_dienstplan_eintrag(
     request: Request,
     repo=Depends(get_dienstplan_repository),
     reports_repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     auch_krankmeldung_loeschen = bool(payload.auch_krankmeldung_loeschen)
     data = payload.model_dump(exclude_unset=True, exclude_none=True, exclude={"auch_krankmeldung_loeschen"})
@@ -255,6 +362,21 @@ def update_dienstplan_eintrag(
     row = repo.update_eintrag(eintrag_id, data, role, actor_username)
     ergebnis = kategorisiere_und_sortiere([_row_to_dict(row)])[0]
     _sichere_tagesdienstplan_snapshot(ergebnis["datum"], repo, reports_repo, actor_username)
+
+    FELDNAMEN = {
+        "ist_krank": "Krank", "ist_bulmorfahrer": "Bulmor-Fahrer:in", "ausgeschlossen": "Ausgeschlossen",
+        "start_zeit": "Beginn", "end_zeit": "Ende", "notiz": "Notiz",
+    }
+    aenderungen = [
+        f"{FELDNAMEN.get(k, k)}: {vorher.get(k)!r} → {v!r}"
+        for k, v in data.items() if vorher.get(k) != v
+    ]
+    if aenderungen:
+        _protokolliere_tagesaenderung(
+            ergebnis["datum"], aktion="BEARBEITET", mitarbeiter_name=ergebnis["mitarbeiter_name"],
+            actor_username=actor_username, actor_role=role,
+            beschreibung=f"'{ergebnis['mitarbeiter_name']}': " + "; ".join(aenderungen),
+        )
 
     # Krank-Status wurde gerade entfernt (true -> false): optional die
     # passende(n) laufende(n) Krankmeldung(en) dieser Person mit löschen
@@ -296,7 +418,7 @@ async def import_dienstplan(
     repo=Depends(get_dienstplan_repository),
     reports_repo: ReportsRepository = Depends(get_reports_repository),
     mitarbeiter_repo=Depends(get_mitarbeiter_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     if not datei.filename or not datei.filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bitte eine Excel-Datei (.xlsx) hochladen.")
@@ -342,6 +464,11 @@ async def import_dienstplan(
     repo.replace_tag(tag, eintraege, datei.filename)
     actor_username = request.session.get("username", role)
     _sichere_tagesdienstplan_snapshot(tag, repo, reports_repo, actor_username)
+    _protokolliere_tagesaenderung(
+        tag, aktion="IMPORT", actor_username=actor_username, actor_role=role,
+        beschreibung=f"Dienstplan aus '{datei.filename}' importiert ({len(eintraege)} Einträge, "
+        f"{len(nicht_zugeordnet)} nicht zugeordnet) - ersetzt den bisherigen Stand dieses Tages.",
+    )
     record_activity(
         request, aktion="IMPORT", bereich="Dienstplan",
         entity_typ="dienstplan", entity_bezeichnung=datei.filename,

@@ -1,9 +1,9 @@
 """CRUD für Krankmeldungen. Jede Änderung wird im Änderungsprotokoll
 (sick_report_audit) UND in der Mitarbeiter-Historie (siehe
 mitarbeiter_historie.py) festgehalten. Nur die Rolle 'admin' darf den
-Careman-Status setzen oder umschalten – die Disposition kann ihn weder
-beim Anlegen noch beim Bearbeiten verändern (Server-seitig erzwungen,
-analog zur bisherigen Supabase-Policy-Logik im Frontend).
+Careman-Status setzen oder umschalten – Disponent und Schichtleitung können
+ihn weder beim Anlegen noch beim Bearbeiten verändern (Server-seitig
+erzwungen, analog zur bisherigen Supabase-Policy-Logik im Frontend).
 
 Die eigentliche Speicherung (lokale SQLite-Datenbank oder dauerhaft in
 Supabase) übernimmt die Repository-Abstraktion in ../repository.py."""
@@ -14,7 +14,7 @@ from typing import List
 from fastapi import APIRouter, Depends, Request, status
 
 from ..aktivitaet import record_activity
-from ..deps import get_current_role, require_admin, require_schichtleitung
+from ..deps import require_admin, require_disponent
 from ..repository import ReportsRepository, get_reports_repository
 from ..schemas import CaremanUpdate, ReportCreate, ReportOut, ReportUpdate
 
@@ -30,7 +30,7 @@ def _entity_id(obj) -> object:
 @router.get("", response_model=List[ReportOut])
 def list_reports(
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     return repo.list_reports()
 
@@ -40,7 +40,7 @@ def create_report(
     payload: ReportCreate,
     request: Request,
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     actor_username = request.session.get("username", role)
     report = repo.create_report(payload.model_dump(), role, actor_username)
@@ -59,7 +59,7 @@ def update_report(
     payload: ReportUpdate,
     request: Request,
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     actor_username = request.session.get("username", role)
     report = repo.update_report(report_id, payload.model_dump(), role, actor_username)
@@ -93,7 +93,7 @@ def delete_report(
     report_id: str,
     request: Request,
     repo: ReportsRepository = Depends(get_reports_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     actor_username = request.session.get("username", role)
     repo.delete_report(report_id, role, actor_username)

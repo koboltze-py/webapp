@@ -25,8 +25,14 @@ Webapp mit Fastapi/
 │   ├── Supabase/               Zielordner der Supabase-Sicherungen (ein Unterordner je Lauf)
 │   ├── App/                    Vollstaendige Software-Backups (manuell erstellt)
 │   ├── Mds/                     Technische Dokumentation als Backup-Snapshot
-│   └── Tagesdienstpläne/        Automatische Dienstplan-Excel-Schnappschuesse
-│                                 (bei jedem Import/jeder Aenderung, siehe LIESMICH.txt)
+│   ├── Tagesdienstpläne/        Automatischer Dienstplan-Excel-Schnappschuss je Tag
+│   │                             (<Jahr>\<MM>_<Monat>\<Tag>.xlsx, wird bei jedem
+│   │                             Import/jeder Aenderung ueberschrieben, kein
+│   │                             separater Ordner/keine separate Datei je Aenderung)
+│   └── Tagesprotokoll/          Fortlaufendes, fuer Menschen lesbares Aenderungsprotokoll
+│                                 je Tag (gleiche Ordnerstruktur wie Tagesdienstplaene,
+│                                 aber WACHSEND: jede Aenderung wird als neue Zeile
+│                                 angehaengt statt ueberschrieben, siehe Abschnitt 3)
 ├── Verwaltungstool/            Desktop-GUI fuer Mitarbeiter/Benutzer/Dienstplan-Import
 │   ├── gui.py
 │   └── requirements.txt
@@ -58,7 +64,7 @@ beendet den Server.
 
 | Rolle | Benutzername | Passwort (Standard) |
 |---|---|---|
-| Disposition | `DRKFKB` | `Disposition` |
+| Disposition (Rollenstufe "Disponent", siehe Abschnitt 8) | `DRKFKB` | `Disposition` |
 | Admin | `ADMIN` | `BitteAendern123` |
 
 Diese Passwörter stehen (automatisch erzeugt) in `backend\.env`.
@@ -190,9 +196,11 @@ Einmalige Einrichtung in Supabase:
    (siehe `config.example.json`).
 6. In `backend\.env` die drei Service-Passwörter eintragen, mit denen sich
    das Backend selbst (nicht die Mitarbeitenden) bei Bedarf bei Supabase
-   anmeldet: `TIER_SERVICE_PASSWORD_ADMIN`, `TIER_SERVICE_PASSWORD_SCHICHTLEITUNG`
+   anmeldet: `TIER_SERVICE_PASSWORD_ADMIN`, `TIER_SERVICE_PASSWORD_DISPONENT`
    (Passwörter der beiden bestehenden Konten), `TIER_SERVICE_PASSWORD_MITARBEITER`
-   (Passwort des neuen dritten Kontos).
+   (Passwort des neuen dritten Kontos). Die neue Rollenstufe "schichtleitung"
+   (siehe Abschnitt 8) nutzt dabei automatisch dasselbe Supabase-Konto wie
+   "admin" (kein eigenes Service-Passwort nötig).
 7. Backend neu starten (`start_app.bat`).
 
 Ohne diese Einrichtung funktionieren die Sammel-Logins unverändert weiter;
@@ -203,16 +211,15 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
 
 ## 3. Funktionsumfang
 
-- Krankmeldung erfassen, bearbeiten, löschen (Rollenstufen Schichtleitung/Admin)
+- Krankmeldung erfassen, bearbeiten, löschen (Rollenstufen Disponent/
+  Schichtleitung/Admin)
 - Übersicht mit Filtern (Heute/Gestern/Monat/Zeitraum/Mitarbeitersuche)
-- Rollenstufen **Mitarbeiter** (eigene Module), **Schichtleitung**
-  (operative Module, entspricht der bisherigen Disposition-Rolle) und
-  **Admin** (zusätzlich Careman-Status, Änderungsprotokoll,
-  Benutzerverwaltung)
+- 4 Rollenstufen **Mitarbeiter** < **Disponent** < **Schichtleitung** <
+  **Admin** - Details und Rechte je Stufe siehe Abschnitt 8
 - CSV-Export der aktuellen Ansicht sowie des Änderungsprotokolls
 - Änderungsprotokoll: jede Anlage/Änderung/Löschung wird mit
   Vorher-/Nachher-Werten gespeichert und bleibt auch nach Löschung
-  eines Eintrags erhalten (nur für Admin sichtbar)
+  eines Eintrags erhalten (ab Schichtleitung sichtbar)
 - Personal-Stammdaten (`/api/mitarbeiter`), Dienstplan-Excel-Import
   (`/api/dienstplan/import`, erkennt Krank-Meldungen und gelb markierte
   Bulli-Fahrer:innen wie im Nesk3-Projekt) und ein allgemeines
@@ -220,7 +227,16 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
 - Dienstplan: Standard-Sortierung T/T10/T8/sonstige Tag/N/N10/DT/DT3/DN/DN3,
   Erkennung abweichender Dienstzeiten, Filter (Suche/Status/Tag-Nacht-Anzeige),
   manuelle Korrektur (Krank/Bulli-Fahrer/Zeiten/Notiz) mit eigenem
-  Änderungsprotokoll (`/api/dienstplan/audit`, nur Admin)
+  Änderungsprotokoll (`/api/dienstplan/audit`, ab Schichtleitung). In der
+  Standardsortierung wird - wie die bestehende "Dispo"-Trennlinie - auch
+  der Übergang von Tag- zu Nachtdienst optisch klar abgesetzt.
+- Dienstplan: einzelne Personen können unabhängig von einem Excel-Import
+  manuell hinzugefügt (`POST /api/dienstplan`) oder weich entfernt werden
+  (`DELETE /api/dienstplan/{id}`, `POST /api/dienstplan/{id}/wiederherstellen`
+  zum Rückgängigmachen) - ab Rolle Disponent. Hinzugefügte/entfernte
+  Einträge bleiben über Badges "Hinzugefügt"/"Entfernt" sichtbar; entfernte
+  Einträge sind standardmäßig ausgeblendet, über die Checkbox "Entfernte
+  anzeigen" aber weiterhin einsehbar.
 - Dienstplan: Zusammenfassung Tag/Nacht/Dispo-Mitarbeiter im Dienst (inkl.
   Krank-Anzahl je Gruppe, Aufteilung nach Dienstart wie T/T10/T8/N/N10,
   Erkennung von Zeiten die mehr als 1 Std. vom Rest der eigenen Dienstart
@@ -228,15 +244,17 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
   Dienst" mit. Einzelne Mitarbeitende können per Button aus der
   Gesamtrechnung ausgeschlossen bzw. wieder einbezogen werden (serverseitig
   gespeichert je Dienstplan-Eintrag, bleibt also auch nach einem Neuladen
-  der Webseite erhalten, ab Rolle Schichtleitung). Excel-Export eines Tages
+  der Webseite erhalten, ab Rolle Disponent). Excel-Export eines Tages
   (`/api/dienstplan/export`), **1:1 im Format der echten
   Tagesdienstplan-Vorlage** (Zellen, Rahmen, Schriftarten, Farben,
   Zahlenformate - gegen eine echte Datei abgeglichen, siehe
   `backend/app/dienstplan_export.py`). Bei jedem Excel-Import **und**
   jeder manuellen Änderung wird automatisch ein solcher Export unter
-  `Backups\Tagesdienstpläne\<Datum>\<Datum>_<Uhrzeit>.xlsx` gespeichert
-  (Verlauf, kein Ersetzen vorheriger Stände). Namens-Autovervollständigung
-  aus den Mitarbeiter-Stammdaten im Krankmeldungs-Formular
+  `Backups\Tagesdienstpläne\<Jahr>\<MM>_<Monat>\<Tag>.xlsx` gespeichert
+  (überschreibt den vorherigen Stand desselben Tages - der laufende
+  Änderungsverlauf steht stattdessen im Tagesprotokoll, siehe Abschnitt 8).
+  Namens-Autovervollständigung aus den Mitarbeiter-Stammdaten im
+  Krankmeldungs-Formular
 - Dienstplan-Import: jeder importierte Name wird automatisch den
   Mitarbeiter-Stammdaten zugeordnet (exakter Treffer, erkannter
   Vor-/Nachname-Dreher oder eindeutiger Tippfehler-Treffer, siehe
@@ -356,7 +374,7 @@ Funktionen:
   Änderungsprotokoll, Mitarbeiter-Historie, Benutzerprotokoll) - das
   Benutzerprotokoll zeichnet dabei An-/Abmeldungen sowie
   Anlegen/Bearbeiten/Löschen je Account auf und sollte daher nur
-  berechtigten Admin-Personen zugänglich sein.
+  berechtigten Schichtleitungs-/Admin-Personen zugänglich sein.
 - Keine Diagnosen in Bemerkungen erfassen.
 - Standardpasswörter vor Produktivbetrieb ändern (`backend\.env`).
 - Sicherungsordner (`Backups\Supabase`) und die Datenbankdatei
@@ -364,7 +382,100 @@ Funktionen:
 - Vor Produktivbetrieb mit den Datenschutzverantwortlichen klären:
   Rechtsgrundlage, TOMs, Aufbewahrung und Löschkonzept, Zugangsberechtigung.
 
-## 7. Manuelle Befehle (optional, für Entwickler)
+## 8. Neu in version2.1
+
+### Rollenmodell (4 Stufen statt vormals 3)
+
+| Stufe | Beispiel-Login | Rechte |
+|---|---|---|
+| **Mitarbeiter** | Einzel-Login | nur eigene Module (Heute, Meldungen lesen) |
+| **Disponent** | `DRKFKB` (Sammel-Login) | zusätzlich: Krankmeldungen anlegen/bearbeiten/löschen, Mitarbeiter-Stammdaten anlegen/bearbeiten/ausschließen, Dienstplan importieren/exportieren/bearbeiten/manuell hinzufügen oder entfernen, Meldungen verfassen/löschen. **Kein** Zugriff auf Mitarbeiter-Verlauf, Benutzerverwaltung oder Änderungsprotokolle. |
+| **Schichtleitung** | nur Einzel-Login | alles, was Admin auch kann, **außer** den Careman-Status zu setzen/umzuschalten |
+| **Admin** | `ADMIN` (Sammel-Login) | uneingeschränkt, inkl. Careman-Status |
+
+Bestehende Einzel-Login-Konten mit der alten Rolle `schichtleitung`
+(Bedeutung vor version2.1: die operative Stufe, heute `disponent`) wurden
+beim ersten Start automatisch auf `disponent` umbenannt, damit sich ihre
+Rechte nicht unbeabsichtigt erhöhen - die neue, höherwertige Stufe
+`schichtleitung` muss bewusst neu vergeben werden (Einstellungen ->
+Benutzerverwaltung, oder Verwaltungstool).
+
+### Benutzerverwaltung direkt in der Webapp
+
+Einstellungen -> Benutzerverwaltung (ab Rolle Schichtleitung) erlaubt nun
+direkt in der Webapp das Anlegen/Bearbeiten von Einzel-Login-Konten
+(Benutzername, Anzeigename, Rolle, Passwort, Sicherheitsfrage) - ohne das
+separate Verwaltungstool. Konten werden wie gehabt nicht gelöscht,
+sondern deaktiviert.
+
+### Passwort-Reset über Sicherheitsfrage
+
+Beim Anlegen/Bearbeiten eines Kontos kann eine Sicherheitsfrage +
+Antwort hinterlegt werden (Antwort wird nur als bcrypt-Hash gespeichert,
+Groß-/Kleinschreibung und Leerzeichen spielen beim Vergleich keine
+Rolle). Über den Link "Passwort vergessen?" auf der Login-Seite kann
+jede:r Mitarbeiter:in sein/ihr Passwort danach selbst zurücksetzen
+(`POST /api/auth/passwort-vergessen`, `POST /api/auth/passwort-reset`).
+Ohne hinterlegte Sicherheitsfrage bleibt nur der Admin/Schichtleitungs-
+Reset über die Benutzerverwaltung.
+
+### Mitarbeiter-Stammdaten: Suche und Dubletten-Erkennung
+
+- Suchfeld über der Stammdaten-Tabelle (`GET /api/mitarbeiter?suche=...`).
+- Neue Karte "Mögliche Dubletten" (ab Rolle Disponent, Button "Prüfen"):
+  gruppiert Stammdatensätze mit exakt gleichem oder sehr ähnlichem Namen
+  (Tippfehler-Ähnlichkeitsvergleich, siehe `backend/app/mitarbeiter_duplikate.py`)
+  zur manuellen Prüfung - direkt mit "Bearbeiten"/"Löschen" korrigierbar.
+
+### Dienstplan: Mitarbeiter manuell hinzufügen/entfernen
+
+Über den Button "+ Mitarbeiter hinzufügen" lässt sich eine Person
+unabhängig von einem Excel-Import zu einem Tagesdienstplan hinzufügen;
+über "Entfernen" in der Aktionsspalte wird sie weich entfernt (bleibt in
+der Datenbank, Badge "Entfernt", über "Wiederherstellen" rückgängig
+machbar). Die Checkbox "Entferne Einträge: Entfernte anzeigen" blendet
+weich gelöschte Einträge ein/aus. Manuell hinzugefügte Einträge tragen
+zusätzlich das Badge "Hinzugefügt". Beides ab Rolle Disponent bedienbar.
+
+### Klare Tag-/Nacht-Trennung im Dienstplan
+
+In der Standardsortierung wird jetzt - genau wie die bestehende
+"Dispo"-Trennlinie - auch der Übergang von Tag- zu Nachtdienst mit einer
+eigenen Trennzeile ("Nachtdienst") markiert.
+
+### Tagesprotokoll (neu, `Backups\Tagesprotokoll`)
+
+Zusätzlich zum Tagesdienstplan-Schnappschuss (siehe Abschnitt 3, wird je
+Tag überschrieben) wird unter `Backups\Tagesprotokoll\<Jahr>\<MM>_<Monat>\<Tag>.xlsx`
+ein fortlaufendes, für Menschen lesbares Änderungsprotokoll geführt: jeder
+Import und jede manuelle Änderung (bearbeitet/hinzugefügt/entfernt/
+wiederhergestellt) eines Dienstplan-Eintrags wird dort als neue Zeile
+(Zeitpunkt, Aktion, Mitarbeiter, Durchgeführt von, Rolle, Beschreibung)
+angehängt - die Datei wächst über den Tag, nichts wird überschrieben.
+
+### Datensicherheit: Erkennung von OneDrive-Synchronisationskonflikten
+
+Die lokale Datenbank (`backend\data\krankmeldungen.db`) liegt bewusst
+innerhalb des mit OneDrive synchronisierten Projektordners (siehe
+Abschnitt 2) und kann daher - wenn die App kurz hintereinander auf zwei
+Geräten läuft - Ziel eines OneDrive-Synchronisationskonflikts werden:
+OneDrive legt dann eine Konfliktkopie an (z. B. `krankmeldungen-PCNAME.db`)
+und die eigentlich aktive Datei fällt unbemerkt auf einen älteren Stand
+zurück (Ursache für scheinbar verschwundene Dienstplan-Importe/
+Krankmeldungen). Das Backend prüft daher bei jedem Start den
+`backend\data`-Ordner auf weitere `*.db`-Dateien und warnt lautstark
+(Konsole **und** Hinweisleiste auf der "Heute"-Seite, ab Rolle
+Schichtleitung, `GET /api/system/warnungen`), falls eine gefundene
+Konfliktkopie neuer ist als die aktive Datenbank. **Wichtig:** Die App
+sollte weiterhin nur auf einem PC gleichzeitig laufen (siehe Abschnitt 2) -
+diese Prüfung macht ein bereits aufgetretenes Problem nur sichtbar, sie
+verhindert es nicht automatisch und führt auch keine automatische
+Daten-Zusammenführung durch. Bei einer Warnung: Server beenden, mit
+einem/einer Administrator:in die beiden Datenbankdateien vergleichen
+(z. B. mit dem Verwaltungstool oder einem SQLite-Browser) und die
+Konfliktkopie erst danach manuell entfernen.
+
+## 9. Manuelle Befehle (optional, für Entwickler)
 
 Falls die `.bat`-Dateien nicht verwendet werden sollen:
 

@@ -6,7 +6,7 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, Request, status
 
 from ..aktivitaet import record_activity
-from ..deps import get_current_role, require_schichtleitung
+from ..deps import get_current_role, require_disponent
 from ..modules_repository import get_meldungen_repository
 from ..schemas import MeldungCreate, MeldungOut, MeldungUpdate
 
@@ -27,7 +27,7 @@ def create_meldung(
     payload: MeldungCreate,
     request: Request,
     repo=Depends(get_meldungen_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     autor = request.session.get("username", role)
     row = repo.create_meldung(payload.model_dump(), autor)
@@ -45,7 +45,7 @@ def update_meldung(
     payload: MeldungUpdate,
     request: Request,
     repo=Depends(get_meldungen_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     row = repo.update_meldung(meldung_id, payload.model_dump())
     record_activity(
@@ -61,7 +61,7 @@ def delete_meldung(
     meldung_id: str,
     request: Request,
     repo=Depends(get_meldungen_repository),
-    role: str = Depends(require_schichtleitung),
+    role: str = Depends(require_disponent),
 ):
     repo.delete_meldung(meldung_id)
     record_activity(
