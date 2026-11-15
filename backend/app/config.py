@@ -37,7 +37,7 @@ if not ENV_PATH.exists():
         "# Nur für Einzel-Logins mit aktiver Supabase-Anbindung nötig, siehe\n"
         "# README.md Abschnitt \"Einzel-Logins für Mitarbeitende\":\n"
         "# TIER_SERVICE_PASSWORD_ADMIN=\n"
-        "# TIER_SERVICE_PASSWORD_SCHICHTLEITUNG=\n"
+        "# TIER_SERVICE_PASSWORD_DISPONENT=\n"
         "# TIER_SERVICE_PASSWORD_MITARBEITER=\n",
         encoding="utf-8",
     )
@@ -47,8 +47,10 @@ load_dotenv(ENV_PATH)
 # Rollenstufen für die neuen Einzel-Logins (Benutzer-Tabelle). Die bisherigen
 # zwei geteilten Logins (ADMIN/DRKFKB) bleiben als Legacy-Zugang erhalten,
 # siehe routers/auth.py. "admin" entspricht dem bisherigen Admin-Konto,
-# "schichtleitung" dem bisherigen Disposition-Konto, "mitarbeiter" ist neu.
-TIER_ROLES = ("mitarbeiter", "schichtleitung", "admin")
+# "disponent" dem bisherigen Disposition-Konto (vor version2.1 noch
+# "schichtleitung" genannt), "mitarbeiter" und "schichtleitung" (neue,
+# zwischen Disponent und Admin liegende Stufe) sind neu, siehe deps.py.
+TIER_ROLES = ("mitarbeiter", "disponent", "schichtleitung", "admin")
 
 # Dauerhafte Supabase-Anbindung: verwendet dieselbe Konfigurationsdatei wie
 # das Supabase-Sicherungs-Werkzeug (Project URL + oeffentlicher anon-Key,
@@ -91,7 +93,9 @@ class Settings:
     # das Passwort des geteilten Supabase-Kontos eintippen. Kein
     # Service-Role-Key, nur normale Supabase-Auth-Konten mit RLS.
     tier_service_password_admin: str = os.getenv("TIER_SERVICE_PASSWORD_ADMIN", "")
-    tier_service_password_schichtleitung: str = os.getenv("TIER_SERVICE_PASSWORD_SCHICHTLEITUNG", "")
+    tier_service_password_disponent: str = os.getenv(
+        "TIER_SERVICE_PASSWORD_DISPONENT", os.getenv("TIER_SERVICE_PASSWORD_SCHICHTLEITUNG", "")
+    )
     tier_service_password_mitarbeiter: str = os.getenv("TIER_SERVICE_PASSWORD_MITARBEITER", "")
 
     # Expliziter Schalter: Erst wenn dieser auf true steht, wird Supabase
@@ -113,14 +117,21 @@ class Settings:
     def tier_email(self, tier: str) -> str:
         return {
             "admin": self.supabase_login_email_admin,
-            "schichtleitung": self.supabase_login_email_disposition,
+            "disponent": self.supabase_login_email_disposition,
+            # Neue Stufe "schichtleitung" (zwischen Disponent und Admin, siehe
+            # deps.py) hat bewusst KEIN eigenes Supabase-Konto - fachlich fast
+            # admin-gleich (alles außer Careman-Status, serverseitig über
+            # require_admin an der Stelle selbst erzwungen), daher reicht für
+            # die Supabase-Anbindung (Row-Level-Security) das Admin-Konto.
+            "schichtleitung": self.supabase_login_email_admin,
             "mitarbeiter": self.supabase_login_email_mitarbeiter,
         }.get(tier, "")
 
     def tier_service_password(self, tier: str) -> str:
         return {
             "admin": self.tier_service_password_admin,
-            "schichtleitung": self.tier_service_password_schichtleitung,
+            "disponent": self.tier_service_password_disponent,
+            "schichtleitung": self.tier_service_password_admin,
             "mitarbeiter": self.tier_service_password_mitarbeiter,
         }.get(tier, "")
 

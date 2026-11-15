@@ -51,8 +51,13 @@ class Benutzer(Base):
     username = Column(String(80), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
     anzeigename = Column(String(150), nullable=False, default="")
-    rolle = Column(String(20), nullable=False, default="mitarbeiter")  # mitarbeiter/schichtleitung/admin
+    rolle = Column(String(20), nullable=False, default="mitarbeiter")  # mitarbeiter/disponent/schichtleitung/admin
     aktiv = Column(Boolean, nullable=False, default=True)
+    # Selbstbedienungs-Passwort-Reset (siehe routers/auth.py:
+    # /passwort-vergessen, /passwort-reset): die Antwort wird NIE im
+    # Klartext gespeichert, nur als bcrypt-Hash (wie das Passwort selbst).
+    sicherheitsfrage = Column(String(200), nullable=False, default="")
+    sicherheitsantwort_hash = Column(String(255), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -100,6 +105,13 @@ class DienstplanEintrag(Base):
     # der Webseite erhalten bleibt (vorher nur clientseitig, ging beim
     # Neuladen verloren).
     ausgeschlossen = Column(Boolean, nullable=False, default=False)
+    # Weich gelöscht (siehe routers/dienstplan.py: delete_dienstplan_eintrag/
+    # restore_dienstplan_eintrag) - bleibt erhalten, damit sichtbar bleibt,
+    # dass/wann ein Mitarbeiter aus dem Tagesdienstplan entfernt wurde.
+    geloescht = Column(Boolean, nullable=False, default=False)
+    # True = manuell über POST /api/dienstplan hinzugefügt statt aus einem
+    # Excel-Import übernommen (siehe create_dienstplan_eintrag).
+    manuell_hinzugefuegt = Column(Boolean, nullable=False, default=False)
     notiz = Column(String(500), nullable=False, default="")
     quelle_datei = Column(String(255), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

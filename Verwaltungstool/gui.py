@@ -34,8 +34,8 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 import requests
 
 DEFAULT_SERVER = "http://127.0.0.1:8000"
-ROLLEN = ["mitarbeiter", "schichtleitung", "admin"]
-ROLLEN_LABEL = {"mitarbeiter": "Mitarbeiter", "schichtleitung": "Schichtleitung", "admin": "Admin"}
+ROLLEN = ["mitarbeiter", "disponent", "schichtleitung", "admin"]
+ROLLEN_LABEL = {"mitarbeiter": "Mitarbeiter", "disponent": "Disponent", "schichtleitung": "Schichtleitung", "admin": "Admin"}
 # Lesbare Bezeichnung je Mitarbeiter-Historie-Ereignistyp (siehe
 # backend\app\models.py:MitarbeiterEreignis / routers/mitarbeiter.py).
 EREIGNIS_LABEL = {

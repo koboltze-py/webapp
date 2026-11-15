@@ -199,6 +199,7 @@ def _snapshot_dienstplan_orm(row: DienstplanEintrag) -> dict[str, Any]:
         "ist_krank": row.ist_krank,
         "ist_bulmorfahrer": row.ist_bulmorfahrer,
         "ausgeschlossen": row.ausgeschlossen,
+        "geloescht": row.geloescht,
         "notiz": row.notiz,
     }
 
@@ -207,12 +208,16 @@ class SqliteDienstplanRepository:
     def __init__(self, db):
         self.db = db
 
-    def list_eintraege(self, von: Optional[date] = None, bis: Optional[date] = None) -> list[DienstplanEintrag]:
+    def list_eintraege(
+        self, von: Optional[date] = None, bis: Optional[date] = None, mit_geloeschten: bool = False
+    ) -> list[DienstplanEintrag]:
         q = self.db.query(DienstplanEintrag)
         if von:
             q = q.filter(DienstplanEintrag.datum >= von)
         if bis:
             q = q.filter(DienstplanEintrag.datum <= bis)
+        if not mit_geloeschten:
+            q = q.filter(DienstplanEintrag.geloescht.is_(False))
         return q.order_by(DienstplanEintrag.datum.desc(), DienstplanEintrag.mitarbeiter_name).all()
 
     def get_eintrag(self, eintrag_id) -> DienstplanEintrag:
@@ -234,6 +239,16 @@ class SqliteDienstplanRepository:
         for row in rows:
             self.db.refresh(row)
         return rows
+
+    def create_eintrag(self, tag: date, data: dict[str, Any]) -> DienstplanEintrag:
+        """Manuelles Hinzufügen einer einzelnen Person zu einem bereits
+        bestehenden Tagesdienstplan (siehe routers/dienstplan.py:
+        create_dienstplan_eintrag) - unabhängig von einem Excel-Import."""
+        row = DienstplanEintrag(datum=tag, quelle_datei="", manuell_hinzugefuegt=True, **data)
+        self.db.add(row)
+        self.db.commit()
+        self.db.refresh(row)
+        return row
 
     def update_eintrag(self, eintrag_id, data: dict[str, Any], actor_role: str, actor_username: str) -> DienstplanEintrag:
         row = self.db.get(DienstplanEintrag, int(eintrag_id))
@@ -270,12 +285,16 @@ class SqliteDienstplanRepository:
 
 
 class SupabaseDienstplanRepository(_SupabaseRoleRepository):
-    def list_eintraege(self, von: Optional[date] = None, bis: Optional[date] = None) -> list[dict[str, Any]]:
+    def list_eintraege(
+        self, von: Optional[date] = None, bis: Optional[date] = None, mit_geloeschten: bool = False
+    ) -> list[dict[str, Any]]:
         rows = self._call(sb.list_rows, sb.DIENSTPLAN_TABLE, order="datum.desc,mitarbeiter_name.asc")
         if von:
             rows = [r for r in rows if r.get("datum") and r["datum"] >= von.isoformat()]
         if bis:
             rows = [r for r in rows if r.get("datum") and r["datum"] <= bis.isoformat()]
+        if not mit_geloeschten:
+            rows = [r for r in rows if not r.get("geloescht")]
         return rows
 
     def get_eintrag(self, eintrag_id) -> dict[str, Any]:
@@ -295,6 +314,12 @@ class SupabaseDienstplanRepository(_SupabaseRoleRepository):
             neue.append(row)
         return neue
 
+    def create_eintrag(self, tag: date, data: dict[str, Any]) -> dict[str, Any]:
+        return self._call(
+            sb.insert_row, sb.DIENSTPLAN_TABLE,
+            {"datum": tag, "quelle_datei": "", "manuell_hinzugefuegt": True, **data},
+        )
+
     def update_eintrag(self, eintrag_id, data: dict[str, Any], actor_role: str, actor_username: str) -> dict[str, Any]:
         old_row = self._call(sb.get_row, sb.DIENSTPLAN_TABLE, eintrag_id)
         if not old_row:
@@ -312,8 +337,8 @@ class SupabaseDienstplanRepository(_SupabaseRoleRepository):
                     "action": "UPDATE",
                     "actor_role": actor_role,
                     "actor_username": actor_username,
-                    "old_data": {k: old_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "ausgeschlossen", "notiz")},
-                    "new_data": {k: new_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "ausgeschlossen", "notiz")},
+                    "old_data": {k: old_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "ausgeschlossen", "geloescht", "notiz")},
+                    "new_data": {k: new_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "ausgeschlossen", "geloescht", "notiz")},
                 },
             )
         except sb.SupabaseError as exc:

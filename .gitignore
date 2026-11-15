@@ -20,6 +20,11 @@ Backups/App/*/
 Backups/Tagesdienstpläne/*/
 !Backups/Tagesdienstpläne/LIESMICH.txt
 
+# Fortlaufendes Tagesprotokoll der Dienstplan-Änderungen (enthält ebenfalls
+# Mitarbeiternamen, siehe Backups/Tagesprotokoll/LIESMICH.txt)
+Backups/Tagesprotokoll/*/
+!Backups/Tagesprotokoll/LIESMICH.txt
+
 # Technische Dokumentation als Backup-Snapshot (lokales Nachschlagewerk,
 # nicht Teil des Versionsverlaufs)
 Backups/Mds/

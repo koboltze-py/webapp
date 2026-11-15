@@ -58,7 +58,8 @@ class AuditOut(BaseModel):
 
 # --- Benutzer (Einzel-Logins) -------------------------------------------
 
-TIER_ROLES = ("mitarbeiter", "schichtleitung", "admin")
+# Siehe deps.py für die genaue Rechtebeschreibung je Stufe.
+TIER_ROLES = ("mitarbeiter", "disponent", "schichtleitung", "admin")
 
 
 class BenutzerCreate(BaseModel):
@@ -67,6 +68,11 @@ class BenutzerCreate(BaseModel):
     anzeigename: str = Field("", max_length=150)
     rolle: str = Field("mitarbeiter")
     aktiv: bool = True
+    # Für die Selbstbedienungs-Passwort-Reset-Funktion (siehe
+    # routers/auth.py: /passwort-vergessen, /passwort-reset). Beide optional,
+    # ohne Sicherheitsfrage ist nur der Admin-Reset möglich.
+    sicherheitsfrage: str = Field("", max_length=200)
+    sicherheitsantwort: str = Field("", max_length=200)
 
 
 class BenutzerUpdate(BaseModel):
@@ -74,6 +80,8 @@ class BenutzerUpdate(BaseModel):
     rolle: Optional[str] = None
     aktiv: Optional[bool] = None
     password: Optional[str] = Field(None, min_length=6, max_length=200)
+    sicherheitsfrage: Optional[str] = Field(None, max_length=200)
+    sicherheitsantwort: Optional[str] = Field(None, max_length=200)
 
 
 class BenutzerOut(BaseModel):
@@ -84,8 +92,27 @@ class BenutzerOut(BaseModel):
     anzeigename: str
     rolle: str
     aktiv: bool
+    # Nur ob eine Sicherheitsfrage hinterlegt ist, NIE die Antwort selbst.
+    hat_sicherheitsfrage: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class PasswortVergessenRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=80)
+
+
+class PasswortVergessenResponse(BaseModel):
+    """Liefert NUR die hinterlegte Sicherheitsfrage zurück (nie, ob der
+    Benutzername existiert - siehe routers/auth.py, verhindert
+    Benutzernamen-Enumeration)."""
+    sicherheitsfrage: Optional[str] = None
+
+
+class PasswortResetRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=80)
+    sicherheitsantwort: str = Field(..., min_length=1, max_length=200)
+    neues_passwort: str = Field(..., min_length=6, max_length=200)
 
 
 class LoginResponse(BaseModel):
@@ -124,6 +151,17 @@ class MitarbeiterOut(MitarbeiterBase):
     updated_at: datetime
 
 
+class MitarbeiterDuplikatGruppe(BaseModel):
+    """Eine Gruppe vermutlich doppelt angelegter Mitarbeiter-Stammdatensätze
+    (exakt gleicher Name ODER sehr ähnlicher Name/Tippfehler, siehe
+    mitarbeiter_duplikate.py). Rein informativ - der Admin/Disponent
+    entscheidet selbst, welcher Datensatz bleibt (siehe
+    routers/mitarbeiter.py: delete_mitarbeiter für den Rest)."""
+
+    grund: str  # "exakt" oder "aehnlich"
+    mitarbeiter: list[MitarbeiterOut]
+
+
 # --- Dienstplan -------------------------------------------------------------
 
 
@@ -142,6 +180,15 @@ class DienstplanEintragOut(BaseModel):
     # Manuell aus der Tag/Nacht/Dispo-Gesamtrechnung herausgenommen, siehe
     # models.py:DienstplanEintrag.ausgeschlossen.
     ausgeschlossen: bool = False
+    # Manuell aus dem Dienstplan entfernt (weich gelöscht, siehe
+    # routers/dienstplan.py: delete_dienstplan_eintrag). Bleibt in der
+    # Datenbank erhalten und kann über restore_dienstplan_eintrag
+    # wiederhergestellt werden; standardmäßig in Listen ausgeblendet
+    # (siehe GET /api/dienstplan ?mit_geloeschten=true).
+    geloescht: bool = False
+    # True = nicht aus einem Excel-Import, sondern manuell über
+    # POST /api/dienstplan hinzugefügt (siehe create_dienstplan_eintrag).
+    manuell_hinzugefuegt: bool = False
     notiz: str = ""
     quelle_datei: str = ""
     created_at: datetime
@@ -155,6 +202,22 @@ class DienstplanEintragOut(BaseModel):
     ist_dispo: bool = False
     zeit_abweichend: bool = False
     schicht_typ: Optional[str] = None
+
+
+class DienstplanEintragCreate(BaseModel):
+    """Manuelles Hinzufügen einer einzelnen Person zu einem Tagesdienstplan
+    (unabhängig von einem Excel-Import), siehe
+    routers/dienstplan.py:create_dienstplan_eintrag."""
+
+    datum: date
+    mitarbeiter_name: str = Field(..., min_length=1, max_length=150)
+    mitarbeiter_id: Optional[Union[int, str]] = None
+    dienst_kategorie: Optional[str] = Field(None, max_length=20)
+    start_zeit: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    end_zeit: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    ist_krank: bool = False
+    ist_bulmorfahrer: bool = False
+    notiz: str = Field("", max_length=500)
 
 
 class DienstplanEintragUpdate(BaseModel):
