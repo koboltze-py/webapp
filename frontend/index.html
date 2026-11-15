@@ -246,7 +246,7 @@ td button{padding:5px 10px;font-size:12.5px}
             <div class="metric"><strong id="dpSumBulmor">–</strong><span>Bulmor-Fahrer:in: <span id="dpSumBulmorTag">0</span> Tag / <span id="dpSumBulmorNacht">0</span> Nacht</span></div>
             <div class="metric"><strong id="dpSumStarkAbweichend">–</strong><span>Zeiten &gt; 1 Std. vom Rest der Dienstart abweichend</span><span class="dp-sub" id="dpSumStarkAbweichendNamen"></span></div>
           </section>
-          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th>Gesamtrechnung</th><th data-min-role="disponent">Aktion</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
+          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Dienst</th><th>Beginn</th><th>Ende</th><th>Status</th><th>Notiz</th><th>Gesamtrechnung</th><th data-min-role="disponent">Aktion</th><th data-min-role="disponent">Entfernen</th></tr></thead><tbody id="dienstplanEntries"></tbody></table></div>
           <p id="dienstplanMessage" class="small muted" role="status"></p>
         </section>
         <section class="card hidden" id="dienstplanHinzufuegenCard" data-min-role="disponent">
@@ -1135,15 +1135,15 @@ function renderDienstplan(){
     // Klare Trennung Tagdienst/Nachtdienst, genau wie die bestehende
     // "Dispo"-Trennlinie unten - nur beim Wechsel Tag -> Nacht sichtbar.
     if(istStandard && e.schicht_typ==='nacht' && vorherigeSchichtTyp==='tag'){
-      const divider=body.insertRow();divider.className='dp-divider';const td=divider.insertCell();td.colSpan=8;td.append(text('Nachtdienst'));
+      const divider=body.insertRow();divider.className='dp-divider';const td=divider.insertCell();td.colSpan=9;td.append(text('Nachtdienst'));
     }
     vorherigeSchichtTyp=e.schicht_typ;
     if(istStandard && TRENNLINIEN_KATEGORIEN.has(e.effektive_kategorie) && e.effektive_kategorie!==vorherigeKategorie){
-      const divider=body.insertRow();divider.className='dp-divider dp-divider-klein';const td=divider.insertCell();td.colSpan=8;td.append(text(e.effektive_kategorie));
+      const divider=body.insertRow();divider.className='dp-divider dp-divider-klein';const td=divider.insertCell();td.colSpan=9;td.append(text(e.effektive_kategorie));
     }
     vorherigeKategorie=e.effektive_kategorie;
     if(istStandard && e.ist_dispo && vorherigeDispo===false){
-      const divider=body.insertRow();divider.className='dp-divider';const td=divider.insertCell();td.colSpan=8;td.append(text('Dispo'));
+      const divider=body.insertRow();divider.className='dp-divider';const td=divider.insertCell();td.colSpan=9;td.append(text('Dispo'));
     }
     vorherigeDispo=e.ist_dispo;
     const tr=body.insertRow();
@@ -1181,10 +1181,11 @@ function renderDienstplan(){
     if(ausgeschlossen){const p=document.createElement('span');p.className='pill';p.style.marginLeft='6px';p.textContent='ausgeschlossen';rechnungCell.append(p)}
     else if(e.virtuell||!roleAtLeast('disponent'))rechnungCell.append(text('–'));
     const actionCell=tr.insertCell();actionCell.dataset.minRole='disponent';actionCell.classList.toggle('hidden',!roleAtLeast('disponent'));
-    if(e.virtuell){actionCell.append(text('–'))}
+    const entfernenCell=tr.insertCell();entfernenCell.dataset.minRole='disponent';entfernenCell.classList.toggle('hidden',!roleAtLeast('disponent'));
+    if(e.virtuell){actionCell.append(text('–'));entfernenCell.append(text('–'))}
     else{
       if(!e.geloescht){
-        const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit,document.createTextNode(' '));
+        const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit);
         const del=document.createElement('button');del.className='danger';del.textContent='Entfernen';
         del.onclick=async()=>{
           if(!window.confirm('"'+e.mitarbeiter_name+'" aus dem Dienstplan entfernen? Bleibt als "Entfernt" nachvollziehbar und kann wiederhergestellt werden.'))return;
@@ -1192,15 +1193,16 @@ function renderDienstplan(){
           try{await api('/api/dienstplan/'+e.id,{method:'DELETE'});await loadDienstplan()}
           catch(err){del.disabled=false;msg('dienstplanMessage','Entfernen fehlgeschlagen: '+err.message,true)}
         };
-        actionCell.append(del);
+        entfernenCell.append(del);
       }else{
+        actionCell.append(text('–'));
         const wh=document.createElement('button');wh.className='secondary';wh.textContent='Wiederherstellen';
         wh.onclick=async()=>{
           wh.disabled=true;
           try{await api('/api/dienstplan/'+e.id+'/wiederherstellen',{method:'POST'});await loadDienstplan()}
           catch(err){wh.disabled=false;msg('dienstplanMessage','Wiederherstellen fehlgeschlagen: '+err.message,true)}
         };
-        actionCell.append(wh);
+        entfernenCell.append(wh);
       }
     }
   }
