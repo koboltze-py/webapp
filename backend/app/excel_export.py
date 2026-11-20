@@ -17,22 +17,18 @@ HEADER_FILL = PatternFill("solid", fgColor="FF4A6274")
 DATEN_FONT = Font(name="Calibri", size=10)
 
 
-def export_tabelle_excel(
+def schreibe_tabellen_blatt(
+    ws,
     *,
     titel: str,
-    blattname: str,
     spalten: Sequence[tuple[str, str]],
     zeilen: Sequence[dict[str, Any]],
-) -> bytes:
-    """Erzeugt eine .xlsx-Datei mit genau einem Tabellenblatt.
-
-    `spalten` ist eine Liste aus (Schlüssel-in-zeilen, Spaltentitel);
-    Werte vom Typ datetime/date werden automatisch als lokal lesbare
-    Zeichenkette formatiert, dict/list-Werte als JSON-Text."""
-    wb = Workbook()
-    ws = wb.active
-    ws.title = blattname[:31] or "Export"
-
+) -> None:
+    """Schreibt Titel/Header/Daten einer Tabelle in ein BEREITS vorhandenes
+    Arbeitsblatt (siehe export_tabelle_excel, das dies für ein einzelnes
+    Blatt kapselt). Wiederverwendbar für Mehrblatt-Exporte, z. B.
+    dienstplan_auswertung_export.py (Verspätungen + Krankmeldungen in
+    einer Datei)."""
     ws.append([titel])
     ws["A1"].font = Font(name="Calibri", size=13, bold=True)
     ws.append([f"Exportiert am {datetime.now().strftime('%d.%m.%Y %H:%M')} · {len(zeilen)} Einträge"])
@@ -70,6 +66,24 @@ def export_tabelle_excel(
             + [len(str(z.get(schluessel, ""))) for z in zeilen[:500]]  # Performance bei sehr langen Listen
         )
         ws.column_dimensions[get_column_letter(col_idx)].width = min(max(laenge + 2, 10), 60)
+
+
+def export_tabelle_excel(
+    *,
+    titel: str,
+    blattname: str,
+    spalten: Sequence[tuple[str, str]],
+    zeilen: Sequence[dict[str, Any]],
+) -> bytes:
+    """Erzeugt eine .xlsx-Datei mit genau einem Tabellenblatt.
+
+    `spalten` ist eine Liste aus (Schlüssel-in-zeilen, Spaltentitel);
+    Werte vom Typ datetime/date werden automatisch als lokal lesbare
+    Zeichenkette formatiert, dict/list-Werte als JSON-Text."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = blattname[:31] or "Export"
+    schreibe_tabellen_blatt(ws, titel=titel, spalten=spalten, zeilen=zeilen)
 
     puffer = BytesIO()
     wb.save(puffer)

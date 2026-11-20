@@ -47,6 +47,7 @@ EREIGNIS_LABEL = {
     "stammdaten_geaendert": "Stammdaten geändert",
     "stammdaten_deaktiviert": "Stammdaten deaktiviert",
     "stammdaten_geloescht": "Stammdaten gelöscht",
+    "stammdaten_wiederhergestellt": "Stammdaten wiederhergestellt",
 }
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -117,8 +118,9 @@ class ApiClient:
             pass
 
     # ---- Mitarbeiter ----------------------------------------------------
-    def list_mitarbeiter(self):
-        return self._handle(self.session.get(self._url("/api/mitarbeiter"), timeout=30))
+    def list_mitarbeiter(self, mit_geloeschten: bool = False):
+        params = {"mit_geloeschten": "true"} if mit_geloeschten else {}
+        return self._handle(self.session.get(self._url("/api/mitarbeiter"), params=params, timeout=30))
 
     def create_mitarbeiter(self, data: dict):
         return self._handle(self.session.post(self._url("/api/mitarbeiter"), json=data, timeout=30))
@@ -128,6 +130,9 @@ class ApiClient:
 
     def delete_mitarbeiter(self, mid):
         return self._handle(self.session.delete(self._url(f"/api/mitarbeiter/{mid}"), timeout=30))
+
+    def restore_mitarbeiter(self, mid):
+        return self._handle(self.session.post(self._url(f"/api/mitarbeiter/{mid}/wiederherstellen"), timeout=30))
 
     # ---- Benutzer ---------------------------------------------------------
     def list_benutzer(self):
@@ -532,6 +537,14 @@ class App(tk.Tk):
         tab = ttk.Frame(notebook, padding=10)
         notebook.add(tab, text="Mitarbeiter-Stammdaten")
 
+        toolbar = ttk.Frame(tab)
+        toolbar.pack(fill="x", side="top")
+        self.ma_geloeschte_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            toolbar, text="Entfernte (weich gelöschte) Einträge anzeigen",
+            variable=self.ma_geloeschte_var, command=self._refresh_mitarbeiter,
+        ).pack(side="left", pady=(0, 6))
+
         columns = ("vorname", "nachname", "personalnummer", "funktion", "email", "telefon", "aktiv")
         headers = ("Vorname", "Nachname", "Personalnr.", "Funktion", "E-Mail", "Telefon", "Status")
         self.ma_tree = ttk.Treeview(tab, columns=columns, show="headings", height=12, selectmode="browse")
@@ -560,11 +573,17 @@ class App(tk.Tk):
         ttk.Label(form, text="Notizen").grid(row=4, column=1, sticky="w", padx=4)
         ttk.Entry(form, textvariable=self.ma_vars["notizen"], width=40).grid(row=5, column=1, columnspan=2, sticky="we", padx=4)
 
+        self.ma_status_var = tk.StringVar(value="")
+        ttk.Label(form, textvariable=self.ma_status_var, foreground="#A33").grid(row=4, column=2, sticky="w", padx=4)
+
         btns = ttk.Frame(form)
         btns.grid(row=6, column=0, columnspan=3, sticky="w", pady=(10, 0))
         ttk.Button(btns, text="Neu / Zurücksetzen", command=self._reset_mitarbeiter_form).pack(side="left")
         ttk.Button(btns, text="Speichern", command=self._save_mitarbeiter).pack(side="left", padx=6)
-        ttk.Button(btns, text="Löschen", command=self._delete_mitarbeiter).pack(side="left")
+        self.ma_delete_btn = ttk.Button(btns, text="Löschen (weich)", command=self._delete_mitarbeiter)
+        self.ma_delete_btn.pack(side="left")
+        self.ma_restore_btn = ttk.Button(btns, text="Wiederherstellen", command=self._restore_mitarbeiter)
+        self.ma_restore_btn.pack(side="left", padx=6)
         ttk.Button(btns, text="Verlauf anzeigen", command=self._zeige_mitarbeiter_verlauf).pack(side="left", padx=6)
         ttk.Button(btns, text="Aktualisieren", command=self._refresh_mitarbeiter).pack(side="left", padx=6)
 
@@ -574,7 +593,7 @@ class App(tk.Tk):
     def _refresh_mitarbeiter(self):
         def work():
             try:
-                rows = self.api.list_mitarbeiter()
+                rows = self.api.list_mitarbeiter(mit_geloeschten=self.ma_geloeschte_var.get())
                 self.after(0, lambda: self._fill_mitarbeiter(rows))
             except (ApiError, requests.RequestException) as e:
                 self.after(0, lambda: messagebox.showerror("Fehler", f"Mitarbeiter konnten nicht geladen werden:\n{e}"))
@@ -585,10 +604,14 @@ class App(tk.Tk):
         self.mitarbeiter_rows = rows
         self.ma_tree.delete(*self.ma_tree.get_children())
         for row in rows:
+            if row.get("geloescht"):
+                status = f"Entfernt ({row.get('geloescht_durch', '') or '–'})"
+            else:
+                status = "Aktiv" if row.get("aktiv") else "Inaktiv"
             self.ma_tree.insert(
                 "", "end", iid=str(row["id"]),
                 values=(row["vorname"], row["nachname"], row.get("personalnummer", ""), row.get("funktion", ""),
-                        row.get("email", ""), row.get("telefon", ""), "Aktiv" if row.get("aktiv") else "Inaktiv"),
+                        row.get("email", ""), row.get("telefon", ""), status),
             )
 
     def _on_select_mitarbeiter(self, _event=None):
@@ -602,12 +625,18 @@ class App(tk.Tk):
         for key in ("vorname", "nachname", "personalnummer", "funktion", "email", "telefon", "notizen"):
             self.ma_vars[key].set(row.get(key, "") or "")
         self.ma_aktiv_var.set(bool(row.get("aktiv", True)))
+        if row.get("geloescht"):
+            wann = row.get("geloescht_am", "") or "–"
+            self.ma_status_var.set(f"Entfernt von {row.get('geloescht_durch', '') or '–'} am {wann}")
+        else:
+            self.ma_status_var.set("")
 
     def _reset_mitarbeiter_form(self):
         self.selected_mitarbeiter_id = None
         for var in self.ma_vars.values():
             var.set("")
         self.ma_aktiv_var.set(True)
+        self.ma_status_var.set("")
         self.ma_tree.selection_remove(*self.ma_tree.selection())
 
     def _save_mitarbeiter(self):
@@ -636,7 +665,11 @@ class App(tk.Tk):
             messagebox.showinfo("Hinweis", "Bitte zuerst eine Zeile in der Liste auswählen.")
             return
         name = f"{self.ma_vars['vorname'].get()} {self.ma_vars['nachname'].get()}"
-        if not messagebox.askyesno("Löschen bestätigen", f"Mitarbeiter:in '{name}' wirklich löschen?"):
+        if not messagebox.askyesno(
+            "Löschen bestätigen",
+            f"Mitarbeiter:in '{name}' wirklich entfernen?\n\n"
+            "Der Datensatz bleibt erhalten (weiches Löschen) und kann über 'Wiederherstellen' zurückgeholt werden.",
+        ):
             return
         mid = self.selected_mitarbeiter_id
 
@@ -647,6 +680,22 @@ class App(tk.Tk):
                 self.after(0, self._refresh_mitarbeiter)
             except (ApiError, requests.RequestException) as e:
                 self.after(0, lambda: messagebox.showerror("Löschen fehlgeschlagen", str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _restore_mitarbeiter(self):
+        if not self.selected_mitarbeiter_id:
+            messagebox.showinfo("Hinweis", "Bitte zuerst eine Zeile in der Liste auswählen.")
+            return
+        mid = self.selected_mitarbeiter_id
+
+        def work():
+            try:
+                self.api.restore_mitarbeiter(mid)
+                self.after(0, self._reset_mitarbeiter_form)
+                self.after(0, self._refresh_mitarbeiter)
+            except (ApiError, requests.RequestException) as e:
+                self.after(0, lambda: messagebox.showerror("Wiederherstellen fehlgeschlagen", str(e)))
 
         threading.Thread(target=work, daemon=True).start()
 

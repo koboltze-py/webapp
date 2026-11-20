@@ -4,33 +4,77 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#b71c1c">
+<link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+<link rel="apple-touch-icon" href="assets/nesk-logo.png">
 <title>DRK FKB | Erste-Hilfe-Station</title>
+<script>
+// Theme so früh wie möglich setzen, damit beim Laden kein helles
+// Aufblitzen entsteht, wenn der Nutzer den Dunkelmodus gespeichert hat.
+(function(){
+  try{
+    var gespeichert=localStorage.getItem('theme');
+    var theme=gespeichert||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    document.documentElement.dataset.theme=theme;
+  }catch(e){}
+})();
+</script>
 <style>
 :root{
   --primary:#b71c1c; --primary-dark:#8f1515;
   --ink:#1B2230; --bg:#F4F5F7; --card:#ffffff;
+  --surface:#ffffff; --surface-alt:#f3f5f7;
   --border:#D9DCE1; --border-soft:#ECEEF2; --muted:#5B6475;
+  --shadow:#1c243009;
+  --pill-danger-bg:#fce7e8; --pill-danger-ink:#95262f;
+  --pill-done-bg:#e3f3e9; --pill-done-ink:#167346;
+  --pill-warn-bg:#fff3b0; --pill-warn-ink:#7a5d00;
+  --pill-info-bg:#dce8ff; --pill-info-ink:#123a8a;
+  --notice-bg:#fff4dc;
+  --pinned-bg:#fff7f7;
+  --stark-abweichend-bg:#fff4e5;
+  --secondary-bg:#e8ecf1;
+  --danger-bg:#fff2f2; --danger-ink:#9b1c1c; --danger-border:#efb4b4; --danger-hover-bg:#ffe4e4;
+  --error-ink:#a21c24;
   --radius:16px;
   font-family:'Inter',system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+/* Dunkelmodus: überschreibt nur die Farbvariablen, die restlichen Regeln
+   verwenden diese Variablen bereits und passen sich automatisch an. */
+:root[data-theme="dark"]{
+  --primary:#e14b4b; --primary-dark:#b71c1c;
+  --ink:#E7E9EE; --bg:#14171F; --card:#1C2029;
+  --surface:#1C2029; --surface-alt:#242934;
+  --border:#333948; --border-soft:#272C38; --muted:#9AA3B5;
+  --shadow:#00000040;
+  --pill-danger-bg:#4a2228; --pill-danger-ink:#ff9ea6;
+  --pill-done-bg:#1d3a2c; --pill-done-ink:#7be3ab;
+  --pill-warn-bg:#443a10; --pill-warn-ink:#f5d568;
+  --pill-info-bg:#1d2d4a; --pill-info-ink:#9cc0ff;
+  --notice-bg:#3a3012;
+  --pinned-bg:#3a1f1f;
+  --stark-abweichend-bg:#3a2d12;
+  --secondary-bg:#2a303d;
+  --danger-bg:#432228; --danger-ink:#ff9ea6; --danger-border:#6b333b; --danger-hover-bg:#532830;
+  --error-ink:#ff8990;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink)}
 button{cursor:pointer;background:var(--primary);color:#fff;border:0;border-radius:8px;padding:10px 14px;font-weight:650;font:inherit}
-button.secondary{background:#e8ecf1;color:var(--ink)}
-button.outline{background:#fff;border:1px solid var(--border);color:var(--ink)}
-button.danger{background:#fff2f2;color:#9b1c1c;border:1px solid #efb4b4}
-button.danger:hover{background:#ffe4e4}
+button.secondary{background:var(--secondary-bg);color:var(--ink)}
+button.outline{background:var(--surface);border:1px solid var(--border);color:var(--ink)}
+button.danger{background:var(--danger-bg);color:var(--danger-ink);border:1px solid var(--danger-border)}
+button.danger:hover{background:var(--danger-hover-bg)}
 button:disabled{opacity:.5;cursor:not-allowed}
-input,textarea,select{font:inherit;padding:10px 11px;border:1px solid #cbd2db;border-radius:8px;width:100%;background:#fff}
+input,textarea,select{font:inherit;padding:10px 11px;border:1px solid var(--border);border-radius:8px;width:100%;background:var(--surface);color:var(--ink)}
 textarea{resize:vertical}
 label{font-weight:600;font-size:13px;display:block;margin-bottom:5px}
 .hidden{display:none!important}
 .small{font-size:12px}
 .muted{color:var(--muted)}
-.error{color:#a21c24}
-.notice{padding:12px;border-radius:8px;background:#fff4dc;margin:12px 0}
+.error{color:var(--error-ink)}
+.notice{padding:12px;border-radius:8px;background:var(--notice-bg);margin:12px 0}
 .field{margin-bottom:13px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:18px;box-shadow:0 2px 10px #1c243009}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:18px;box-shadow:0 2px 10px var(--shadow)}
 .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .grid .wide{grid-column:span 2}
 .actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}
@@ -40,29 +84,29 @@ label{font-weight:600;font-size:13px;display:block;margin-bottom:5px}
 .tablewrap{overflow:auto}
 table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:900px}
 th,td{text-align:left;padding:6px 9px;border:1px solid var(--border);vertical-align:top;line-height:1.35}
-th{background:#f3f5f7;white-space:nowrap}
+th{background:var(--surface-alt);white-space:nowrap}
 /* Buttons innerhalb von Tabellenzellen kompakter als Standard-Buttons, damit
    Zeilen mit Aktions-Buttons (z. B. Mitarbeiter: Verlauf/Bearbeiten/Löschen)
    nicht unnötig hoch werden. */
 td button{padding:5px 10px;font-size:12.5px}
-.pill{display:inline-block;background:#fce7e8;color:#95262f;padding:4px 8px;border-radius:99px;font-size:12px;font-weight:600}
-.pill.done{background:#e3f3e9;color:#167346}
-.pill.warn{background:#fff3b0;color:#7a5d00}
-.pill.info{background:#dce8ff;color:#123a8a}
-.dp-divider td{background:#eef0f4;font-weight:700;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.04em;padding:6px 10px}
+.pill{display:inline-block;background:var(--pill-danger-bg);color:var(--pill-danger-ink);padding:4px 8px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.done{background:var(--pill-done-bg);color:var(--pill-done-ink)}
+.pill.warn{background:var(--pill-warn-bg);color:var(--pill-warn-ink)}
+.pill.info{background:var(--pill-info-bg);color:var(--pill-info-ink)}
+.dp-divider td{background:var(--surface-alt);font-weight:700;color:var(--muted);text-transform:uppercase;font-size:11px;letter-spacing:.04em;padding:6px 10px}
 .dp-divider-klein td{background:transparent;border-top:2px solid var(--border);border-bottom:none;font-weight:600;color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.04em;padding:3px 9px 2px}
 .dp-virtuell{font-style:italic;color:var(--muted)}
 .dp-geloescht{text-decoration:line-through;opacity:.6}
-.dp-stark-abweichend td{background:#fff4e5}
+.dp-stark-abweichend td{background:var(--stark-abweichend-bg)}
 .dp-stark-abweichend td:first-child{border-left:3px solid #c77700;font-weight:600}
 .tabnav{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap}
-.tabnav button{background:#e8ecf1;color:var(--ink)}
+.tabnav button{background:var(--secondary-bg);color:var(--ink)}
 .tabnav button.active{background:var(--primary);color:#fff}
 .audit-change{margin:5px 0}
 .audit-change b{font-weight:600}
 .audit-item{white-space:normal;min-width:260px}
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
-.metric{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
 .metric strong{display:block;font-size:28px;color:var(--primary)}
 .metric span{font-size:12px;color:var(--muted)}
 #dienstplanZusammenfassung{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
@@ -76,16 +120,20 @@ td button{padding:5px 10px;font-size:12.5px}
 /* position:sticky statt im normalen Fluss, damit die Sidebar beim Scrollen
    langer Tabellen/Listen immer sichtbar bleibt (vorher wanderte sie mit dem
    restlichen Seiteninhalt aus dem sichtbaren Bereich). */
-.sidebar{width:226px;flex:0 0 226px;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px;position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto}
-.sidebar .brand{display:flex;flex-direction:column;padding:0 8px 16px;border-bottom:1px solid var(--border-soft);margin-bottom:12px}
-.sidebar .brand strong{font-size:15px}
+.sidebar{width:226px;flex:0 0 226px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 12px;position:sticky;top:0;align-self:flex-start;height:100vh;overflow-y:auto}
+.sidebar .brand{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:4px 8px 16px;border-bottom:1px solid var(--border-soft);margin-bottom:12px}
+.sidebar .brand img{width:56px;height:56px;border-radius:50%;box-shadow:0 3px 10px var(--shadow)}
+.sidebar .brand strong{font-size:15px;letter-spacing:.01em}
 .sidebar .brand small{color:var(--muted)}
+.themetoggle{position:relative;background:none;border:1px solid var(--border);border-radius:99px;cursor:pointer;font-size:16px;padding:6px 10px;color:var(--ink)}
+.themetoggle:hover{background:var(--border-soft)}
+.themetoggle-floating{position:fixed;top:16px;right:16px;background:var(--surface);z-index:50}
 .navitem{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;font-weight:650;font-size:14px;background:none;border:0;width:100%;text-align:left;color:var(--ink)}
 .navitem:hover{background:var(--border-soft)}
 .navitem.active{background:var(--primary);color:#fff}
 .navitem .ic{width:20px;text-align:center;font-size:15px}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
-.topbar{background:#fff;border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .topbar .datum-schicht{display:flex;flex-direction:column;line-height:1.3}
 .topbar .datum-schicht strong{font-size:14px}
 .topbar .datum-schicht span{font-size:12px;color:var(--muted)}
@@ -93,7 +141,7 @@ td button{padding:5px 10px;font-size:12.5px}
 .topbar .userbox{display:flex;align-items:center;gap:12px;margin-left:auto}
 .bell{position:relative;background:none;border:0;cursor:pointer;font-size:18px;padding:6px;color:var(--ink)}
 .bell .badge{position:absolute;top:0;right:0;background:var(--primary);color:#fff;border-radius:99px;font-size:10px;padding:1px 5px;line-height:1.3}
-.notif-panel{position:absolute;right:24px;top:62px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px #0002;width:320px;max-height:360px;overflow:auto;z-index:60;padding:10px}
+.notif-panel{position:absolute;right:24px;top:62px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px var(--shadow);width:320px;max-height:360px;overflow:auto;z-index:60;padding:10px}
 .notif-panel .item{padding:8px;border-bottom:1px solid var(--border-soft);font-size:13px}
 .content{padding:24px;max-width:1360px;width:100%;margin:0 auto}
 .view{display:none}
@@ -103,14 +151,14 @@ td button{padding:5px 10px;font-size:12.5px}
 
 /* --- Heute: Vorschau-Karten --- */
 .cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.todaycard{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.todaycard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
 .todaycard h3{margin:0 0 10px;font-size:15px;display:flex;justify-content:space-between;align-items:center}
 .linklist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .linklist li{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:8px 10px;background:var(--bg);border-radius:8px}
 
 /* --- Meldungen: Board --- */
-.boardcard{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
-.boardcard.pinned{border-color:var(--primary);background:#fff7f7}
+.boardcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
+.boardcard.pinned{border-color:var(--primary);background:var(--pinned-bg)}
 .boardcard h4{margin:0 0 6px}
 .boardcard .meta{font-size:12px;color:var(--muted);margin-bottom:8px}
 
@@ -122,11 +170,11 @@ td button{padding:5px 10px;font-size:12.5px}
   .summary,.cards3{grid-template-columns:1fr}
   .sidebar{display:none}
   .topbar .mid{display:none}
-  .bottomnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);z-index:30}
+  .bottomnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);z-index:30}
   .bottomnav button{flex:1;background:none;border:0;padding:8px 4px 10px;font-size:11px;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px;border-radius:0}
   .bottomnav button.active{color:var(--primary)}
   main.content{padding-bottom:78px}
-  .sheet{position:fixed;left:0;right:0;bottom:0;background:#fff;border-radius:16px 16px 0 0;box-shadow:0 -8px 24px #0002;z-index:70;padding:16px}
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-radius:16px 16px 0 0;box-shadow:0 -8px 24px var(--shadow);z-index:70;padding:16px}
 }
 @media(max-width:480px){
   .grid,.toolbar{grid-template-columns:1fr}
@@ -137,6 +185,7 @@ td button{padding:5px 10px;font-size:12.5px}
 </head>
 <body>
 
+<button type="button" class="themetoggle themetoggle-floating" id="themeToggleLogin" aria-label="Darkmode umschalten" title="Darkmode umschalten">🌙</button>
 <section id="login" class="card">
   <h2>Anmeldung</h2>
   <form id="loginForm">
@@ -166,9 +215,14 @@ td button{padding:5px 10px;font-size:12.5px}
 <div id="app" class="hidden">
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><strong>DRK FKB</strong><small>Erste-Hilfe-Station Flughafen</small></div>
+    <div class="brand">
+      <img src="assets/nesk-logo.png" alt="NeSk Logo">
+      <strong>NeSk - Illuminate</strong>
+      <small>Erste-Hilfe-Station Flughafen</small>
+    </div>
     <button type="button" class="navitem" data-view="heute"><span class="ic">🏠</span> Heute</button>
     <button type="button" class="navitem" data-view="dienstplan"><span class="ic">📋</span> Dienstplan</button>
+    <button type="button" class="navitem" data-view="dienstplanauswertung" data-min-role="disponent"><span class="ic">📊</span> Dienstplan Auswertung</button>
     <button type="button" class="navitem" data-view="personal"><span class="ic">🧑‍⚕️</span> Personal / Krankmeldungen</button>
     <button type="button" class="navitem" data-view="meldungen"><span class="ic">📣</span> Meldungen</button>
     <button type="button" class="navitem" data-view="einstellungen" data-min-role="schichtleitung"><span class="ic">⚙️</span> Einstellungen</button>
@@ -179,6 +233,7 @@ td button{padding:5px 10px;font-size:12.5px}
       <div class="datum-schicht"><strong id="topDatum">–</strong><span id="topSchicht">–</span></div>
       <div class="mid"><input id="globalSearch" type="search" placeholder="In aktueller Ansicht suchen …" autocomplete="off"></div>
       <div class="userbox">
+        <button type="button" class="themetoggle" id="themeToggle" aria-label="Darkmode umschalten" title="Darkmode umschalten">🌙</button>
         <button type="button" class="bell" id="notifBell" aria-label="Benachrichtigungen">🔔<span id="notifBadge" class="badge hidden">0</span></button>
         <span id="currentRole" class="small">Nicht angemeldet</span>
         <button type="button" id="logout" class="outline">Abmelden</button>
@@ -225,6 +280,7 @@ td button{padding:5px 10px;font-size:12.5px}
             <button type="submit">Datei importieren</button>
           </form>
           <p id="dienstplanImportMessage" class="small" role="status"></p>
+          <div id="dienstplanImportHinweise"></div>
         </section>
         <section class="card">
           <div class="toolbar">
@@ -237,6 +293,7 @@ td button{padding:5px 10px;font-size:12.5px}
             <button type="button" id="dienstplanLaden" class="secondary">Laden</button>
             <button type="button" id="dienstplanExport" class="secondary">Als Excel exportieren</button>
             <button type="button" id="dienstplanHinzufuegenOeffnen" class="secondary" data-min-role="disponent">+ Mitarbeiter hinzufügen</button>
+            <button type="button" id="dienstplanAenderungenOeffnen" class="secondary">Änderungen</button>
           </div>
           <p class="small muted" id="dienstplanQuelle"></p>
           <section class="summary" id="dienstplanZusammenfassung" style="margin:0 0 14px">
@@ -279,6 +336,22 @@ td button{padding:5px 10px;font-size:12.5px}
             <p id="dienstplanEditMessage" class="small" role="status"></p>
           </form>
         </section>
+        <section class="card hidden" id="dienstplanVerCard">
+          <h2>Verspätung erfassen: <span id="dienstplanVerName"></span></h2>
+          <p class="small muted">Geplanter Beginn: <strong id="dienstplanVerGeplant">–</strong>. Die Verspätung wird zusätzlich gespeichert, der geplante Beginn bleibt unverändert.</p>
+          <form id="dienstplanVerForm">
+            <div class="grid">
+              <div class="wide">
+                <label>Schnellwahl (Minuten)</label>
+                <div id="dienstplanVerSchnellwahl" class="actions" style="flex-wrap:wrap"></div>
+              </div>
+              <div><label for="dpVerMinuten">Verspätung (Minuten)</label><input id="dpVerMinuten" type="number" min="0" step="5"></div>
+              <div><label>Tatsächlicher Beginn (Vorschau)</label><input id="dpVerVorschau" disabled></div>
+            </div>
+            <div class="actions"><button type="submit">Speichern</button><button type="button" id="dpVerAbbrechen" class="secondary">Abbrechen</button></div>
+            <p id="dienstplanVerMessage" class="small" role="status"></p>
+          </form>
+        </section>
         <section class="card hidden" id="dienstplanKrankPopup">
           <h2>Krankmeldung anlegen für <span id="dpKrankPopupName"></span>?</h2>
           <p class="small muted" id="dpKrankPopupHinweis">Der Eintrag wurde gerade als "Krank" markiert. Soll dazu auch eine Krankmeldung erfasst werden?</p>
@@ -293,11 +366,48 @@ td button{padding:5px 10px;font-size:12.5px}
             <p id="dpKrankPopupMessage" class="small" role="status"></p>
           </form>
         </section>
-        <section class="card" data-min-role="schichtleitung">
-          <h2>Änderungsprotokoll Dienstplan <button type="button" id="dienstplanAuditToggle" class="secondary small">Anzeigen</button></h2>
-          <div id="dienstplanAuditWrap" class="hidden">
-            <div class="tablewrap"><table><thead><tr><th>Zeitpunkt</th><th>Mitarbeiter</th><th>Durch</th><th>Änderungen</th></tr></thead><tbody id="dienstplanAuditEntries"></tbody></table></div>
+        <section class="card hidden" id="dienstplanAenderungenCard">
+          <h2>Änderungen</h2>
+          <p class="small muted">Alle Dienstplan-Änderungen (Hinzugefügt/Bearbeitet/Entfernt/Wiederhergestellt) - für einen einzelnen Tag oder einen Zeitraum.</p>
+          <div class="toolbar">
+            <div><label for="dpAendVon">Von</label><input id="dpAendVon" type="date"></div>
+            <div><label for="dpAendBis">Bis</label><input id="dpAendBis" type="date"></div>
+            <button type="button" id="dpAendAnzeigen" class="secondary">Anzeigen</button>
+            <button type="button" id="dpAendExport" class="secondary">Als Excel exportieren</button>
+            <button type="button" id="dpAendSchliessen" class="secondary">Schließen</button>
           </div>
+          <div class="tablewrap"><table><thead><tr><th>Tag</th><th>Zeitpunkt</th><th>Aktion</th><th>Mitarbeiter</th><th>Durch</th><th>Änderungen</th></tr></thead><tbody id="dienstplanAuditEntries"></tbody></table></div>
+          <p id="dienstplanAenderungenMessage" class="small muted" role="status"></p>
+        </section>
+      </section>
+
+      <!-- ============ Dienstplan Auswertung ============ -->
+      <section id="view-dienstplanauswertung" class="view">
+        <div class="pagehead"><div><h2>Dienstplan Auswertung</h2><p class="small muted">Verspätungen und Krankmeldungen für einen frei wählbaren Zeitraum auswerten.</p></div></div>
+        <section class="card">
+          <div class="toolbar">
+            <div><label for="dpaVon">Von</label><input id="dpaVon" type="date"></div>
+            <div><label for="dpaBis">Bis</label><input id="dpaBis" type="date"></div>
+            <button type="button" id="dpaAuswerten" class="secondary">Auswerten</button>
+            <button type="button" id="dpaExport" class="secondary">Als Excel exportieren</button>
+          </div>
+          <p id="dpaMessage" class="small muted" role="status"></p>
+        </section>
+        <section class="card">
+          <h2>Verspätungen – Zusammenfassung je Mitarbeiter:in</h2>
+          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Anzahl Verspätungen</th><th>Verspätung gesamt (Minuten)</th></tr></thead><tbody id="dpaVerspaetungZsf"></tbody></table></div>
+        </section>
+        <section class="card">
+          <h2>Verspätungen – Einzelne Vorfälle</h2>
+          <div class="tablewrap"><table><thead><tr><th>Datum</th><th>Mitarbeiter</th><th>Dienst</th><th>Geplanter Beginn</th><th>Verspätung (Min.)</th><th>Erfasst von</th><th>Erfasst am</th></tr></thead><tbody id="dpaVerspaetungDetail"></tbody></table></div>
+        </section>
+        <section class="card">
+          <h2>Krankmeldungen – Zusammenfassung je Mitarbeiter:in</h2>
+          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Anzahl Krankmeldungen</th><th>Kranktage gesamt</th></tr></thead><tbody id="dpaKrankZsf"></tbody></table></div>
+        </section>
+        <section class="card">
+          <h2>Krankmeldungen – Einzelne Vorfälle</h2>
+          <div class="tablewrap"><table><thead><tr><th>Mitarbeiter</th><th>Krank von</th><th>Krank bis</th><th>Kranktage</th><th>Angenommen von</th><th>Gemeldet am</th></tr></thead><tbody id="dpaKrankDetail"></tbody></table></div>
         </section>
       </section>
 
@@ -369,13 +479,14 @@ td button{padding:5px 10px;font-size:12.5px}
           </section>
           <section class="card" data-min-role="disponent" id="mitarbeiterDuplikateCard">
             <h2>Mögliche Dubletten <button type="button" id="mitarbeiterDuplikateToggle" class="secondary small">Prüfen</button></h2>
-            <p class="small muted">Sucht nach Stammdatensätzen mit exakt gleichem oder sehr ähnlichem Namen (z. B. Tippfehler) - zur manuellen Prüfung. Über "Bearbeiten"/"Löschen" unten in der Tabelle korrigierbar.</p>
+            <p class="small muted">Sucht nach Stammdatensätzen mit exakt gleichem oder sehr ähnlichem Namen (z. B. Tippfehler) - zur manuellen Prüfung. Über "Bearbeiten"/"Löschen" unten in der Tabelle korrigierbar. "Löschen" entfernt weich (wiederherstellbar über die Mitarbeiter-Stammdaten-Tabelle, "Entfernte anzeigen").</p>
             <div id="mitarbeiterDuplikateWrap" class="hidden"><div id="mitarbeiterDuplikateListe"></div></div>
           </section>
           <section class="card">
             <h2>Mitarbeiter-Stammdaten</h2>
             <div class="toolbar">
               <div><label for="mitarbeiterSuche">Nach Namen suchen</label><input id="mitarbeiterSuche" placeholder="Vor- oder Nachname eingeben" autocomplete="off"></div>
+              <div data-min-role="disponent"><label>Entfernte Einträge</label><label class="small" style="display:inline-flex;align-items:center;gap:4px;font-weight:400"><input type="checkbox" id="mitarbeiterGeloeschteAnzeigen" style="width:auto"> Entfernte anzeigen</label></div>
             </div>
             <div class="tablewrap"><table><thead><tr><th>Name</th><th>Personalnummer</th><th>Funktion</th><th>E-Mail</th><th>Telefon</th><th>Status</th><th data-min-role="disponent">Aktion</th></tr></thead><tbody id="mitarbeiterEntries"></tbody></table></div>
             <p id="mitarbeiterMessage" class="small muted" role="status"></p>
@@ -475,6 +586,7 @@ td button{padding:5px 10px;font-size:12.5px}
   <button type="button" id="bottomMehr"><span>⋯</span>Mehr</button>
 </nav>
 <div id="mehrSheet" class="sheet hidden">
+  <button type="button" class="secondary" data-view="dienstplanauswertung" data-min-role="disponent" style="width:100%;margin-bottom:8px">📊 Dienstplan Auswertung</button>
   <button type="button" class="secondary" data-view="einstellungen" data-min-role="schichtleitung" style="width:100%;margin-bottom:8px">⚙️ Einstellungen</button>
   <button type="button" class="outline" id="mehrLogout" style="width:100%">Abmelden</button>
 </div>
@@ -484,6 +596,25 @@ td button{padding:5px 10px;font-size:12.5px}
 
 <script type="module">
 const $=id=>document.getElementById(id);
+
+// --- Darkmode: Theme umschalten und in localStorage merken ---
+function setzeThemeIcon(theme){
+  const icon = theme==='dark' ? '☀️' : '🌙';
+  ['themeToggle','themeToggleLogin'].forEach(id=>{const btn=$(id); if(btn) btn.textContent=icon});
+}
+function wendeThemaAn(theme){
+  document.documentElement.dataset.theme=theme;
+  try{localStorage.setItem('theme',theme)}catch(e){}
+  setzeThemeIcon(theme);
+}
+setzeThemeIcon(document.documentElement.dataset.theme||'light');
+function themeUmschalten(){
+  const aktuell=document.documentElement.dataset.theme==='dark' ? 'dark' : 'light';
+  wendeThemaAn(aktuell==='dark' ? 'light' : 'dark');
+}
+$('themeToggle').onclick=themeUmschalten;
+$('themeToggleLogin').onclick=themeUmschalten;
+
 let items=[],editing=null,currentRole=null,currentUsername='';
 const ROLE_RANK={mitarbeiter:0,disponent:1,schichtleitung:2,admin:3};
 const ROLLEN_LABEL={admin:'Admin',schichtleitung:'Schichtleitung',disponent:'Disponent',mitarbeiter:'Mitarbeiter',disposition:'Disponent',system:'System'};
@@ -537,7 +668,7 @@ const fmt=d=>d?d.split('-').reverse().join('.'):'–';
 const text=(v)=>document.createTextNode(String(v??''));
 const msg=(id,value,isError=false)=>{ $(id).textContent=value;$(id).className=isError?'error small':'small muted';};
 function cell(tr,v){let td=tr.insertCell();td.append(text(v));return td}
-function switchView(loggedIn){$('login').classList.toggle('hidden',loggedIn);$('app').classList.toggle('hidden',!loggedIn);if(loggedIn)$('passwortVergessen').classList.add('hidden')}
+function switchView(loggedIn){$('login').classList.toggle('hidden',loggedIn);$('app').classList.toggle('hidden',!loggedIn);$('themeToggleLogin').classList.toggle('hidden',loggedIn);if(loggedIn)$('passwortVergessen').classList.add('hidden')}
 function resetForm(){editing=null;$('entryForm').reset();$('reportedAt').value=today();$('sickFrom').value=today();$('sickTo').value=today();$('formTitle').textContent='Krankmeldung erfassen';$('saveBtn').textContent='Meldung speichern';msg('formMessage','')}
 
 $('loginForm').addEventListener('submit',async e=>{
@@ -591,7 +722,7 @@ $('logout').onclick=doLogout;
 $('mehrLogout').onclick=doLogout;
 
 /* ============================= Navigation ============================= */
-const VIEWS=['heute','dienstplan','personal','meldungen','einstellungen'];
+const VIEWS=['heute','dienstplan','dienstplanauswertung','personal','meldungen','einstellungen'];
 let currentView='heute';
 const viewLoaded={};
 function switchViewTo(name){
@@ -605,6 +736,7 @@ function switchViewTo(name){
 async function loadView(name){
   if(name==='heute')await loadHeute();
   else if(name==='dienstplan'){$('dienstplanDatum').value=today();await loadDienstplan()}
+  else if(name==='dienstplanauswertung'){await initDienstplanAuswertung()}
   else if(name==='personal'){showPersonalTab(roleAtLeast('disponent')?'reports':'mitarbeiter');if(roleAtLeast('disponent'))await load();await loadMitarbeiter()}
   else if(name==='meldungen')await loadMeldungen();
   else if(name==='einstellungen'){if(roleAtLeast('schichtleitung'))await loadBenutzer()}
@@ -632,6 +764,7 @@ async function initViews(){
   renderTopDatum();
   resetForm();updateDateVisibility();
   viewLoaded.heute=true;await loadHeute();
+  await loadMitarbeiter();
   switchViewTo('heute');
   await loadNotifications();
 }
@@ -703,6 +836,7 @@ $('entryForm').onsubmit=async e=>{
   let payload={reported_at:$('reportedAt').value,employee:$('employee').value.trim(),sick_from:from,sick_to:to,call_at:$('callAt').value||null,accepted_by:$('acceptedBy').value.trim(),notes:$('notes').value.trim()};
   if(isAdmin())payload.careman_done=$('careman').value==='true';
   if(!payload.employee){msg('formMessage','Bitte Mitarbeiter angeben.',true);return}
+  if(!istMitarbeiterNameBekannt(payload.employee)){msg('formMessage','„'+payload.employee+'“ ist kein aktiver Mitarbeiter-Stammdatensatz. Bitte aus der Vorschlagsliste auswählen (ggf. zuerst in den Mitarbeiter-Stammdaten anlegen).',true);return}
   $('saveBtn').disabled=true;
   try{
     if(editing)await api('/api/reports/'+editing,{method:'PUT',body:JSON.stringify(payload)});
@@ -784,6 +918,22 @@ $('tabAudit').onclick=()=>showPersonalTab('audit');
 
 /* ============================= Mitarbeiter-Stammdaten ============================= */
 let mitarbeiterListe=[],mitarbeiterEditing=null;
+/* Strikte Namensprüfung (clientseitig, Backend validiert zusätzlich, siehe
+   mitarbeiter_matching.ist_mitarbeiter_name_bekannt): erzwingt, dass bei
+   der Krankmeldungs- und Dienstplan-Eingabe nur Namen aus den aktiven
+   Mitarbeiter-Stammdaten verwendet werden können - akzeptiert sowohl
+   "Vorname Nachname" als auch "Nachname, Vorname". */
+function normalisiereName(n){return (n||'').trim().replace(/\s+/g,' ').toLocaleLowerCase('de-DE')}
+function nameZuVornameNachname(n){
+  const teil=(n||'').trim();
+  if(teil.includes(',')){const [nach,vor]=teil.split(',',2);return normalisiereName((vor||'')+' '+(nach||''))}
+  return normalisiereName(teil);
+}
+function istMitarbeiterNameBekannt(name){
+  const ziel=nameZuVornameNachname(name);
+  if(!ziel)return false;
+  return mitarbeiterListe.some(m=>m.aktiv&&!m.geloescht&&normalisiereName(m.vorname+' '+m.nachname)===ziel);
+}
 function resetMitarbeiterForm(){mitarbeiterEditing=null;$('mitarbeiterForm').reset();$('maAktiv').value='true';$('mitarbeiterFormTitle').textContent='Mitarbeiter:in anlegen';$('maSaveBtn').textContent='Speichern';msg('maFormMessage','')}
 $('mitarbeiterForm').onsubmit=async e=>{
   e.preventDefault();
@@ -798,15 +948,20 @@ $('mitarbeiterForm').onsubmit=async e=>{
 };
 $('maResetBtn').onclick=resetMitarbeiterForm;
 async function loadMitarbeiter(){
-  try{mitarbeiterListe=await api('/api/mitarbeiter');renderMitarbeiter();renderEmployeeSuggestions()}
+  try{
+    const mitGeloeschten=roleAtLeast('disponent')&&$('mitarbeiterGeloeschteAnzeigen')&&$('mitarbeiterGeloeschteAnzeigen').checked;
+    mitarbeiterListe=await api('/api/mitarbeiter'+(mitGeloeschten?'?mit_geloeschten=true':''));
+    renderMitarbeiter();renderEmployeeSuggestions();
+  }
   catch(err){msg('mitarbeiterMessage','Abruf fehlgeschlagen: '+err.message,true)}
 }
+if($('mitarbeiterGeloeschteAnzeigen'))$('mitarbeiterGeloeschteAnzeigen').addEventListener('change',loadMitarbeiter);
 function renderEmployeeSuggestions(){
   for(const listId of ['employeeSuggestions','employeeSuggestionsDienstplan']){
     const list=$(listId);if(!list)continue;
     list.replaceChildren();
     for(const m of mitarbeiterListe){
-      if(!m.aktiv)continue;
+      if(!m.aktiv||m.geloescht)continue;
       const opt=document.createElement('option');
       opt.value=listId==='employeeSuggestions'?(m.nachname+', '+m.vorname):(m.vorname+' '+m.nachname);
       list.append(opt);
@@ -825,13 +980,24 @@ function renderMitarbeiter(){
   for(const m of rows){
     const tr=body.insertRow();
     cell(tr,m.nachname+', '+m.vorname);cell(tr,m.personalnummer||'–');cell(tr,m.funktion||'–');cell(tr,m.email||'–');cell(tr,m.telefon||'–');
-    const statusCell=tr.insertCell();const pill=document.createElement('span');pill.className='pill'+(m.aktiv?' done':'');pill.textContent=m.aktiv?'Aktiv':'Inaktiv';statusCell.append(pill);
-    const actionCell=tr.insertCell();actionCell.dataset.minRole='disponent';actionCell.classList.toggle('hidden',!roleAtLeast('disponent'));
-    if(roleAtLeast('schichtleitung')){
-      const verlauf=document.createElement('button');verlauf.className='secondary';verlauf.textContent='Verlauf';verlauf.onclick=()=>zeigeMitarbeiterVerlauf(m);actionCell.append(verlauf,document.createTextNode(' '));
+    const statusCell=tr.insertCell();
+    if(m.geloescht){
+      const pill=document.createElement('span');pill.className='pill warn';pill.textContent='Entfernt';
+      pill.title='Entfernt von '+(m.geloescht_durch||'–')+' am '+(m.geloescht_am?new Date(m.geloescht_am).toLocaleString('de-DE'):'–')+'.';
+      statusCell.append(pill);
+    }else{
+      const pill=document.createElement('span');pill.className='pill'+(m.aktiv?' done':'');pill.textContent=m.aktiv?'Aktiv':'Inaktiv';statusCell.append(pill);
     }
-    const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>editMitarbeiter(m);actionCell.append(edit,document.createTextNode(' '));
-    const del=document.createElement('button');del.className='danger';del.textContent='Löschen';del.onclick=()=>deleteMitarbeiter(m);actionCell.append(del);
+    const actionCell=tr.insertCell();actionCell.dataset.minRole='disponent';actionCell.classList.toggle('hidden',!roleAtLeast('disponent'));
+    if(m.geloescht){
+      const wh=document.createElement('button');wh.className='secondary';wh.textContent='Wiederherstellen';wh.onclick=()=>restoreMitarbeiter(m);actionCell.append(wh);
+    }else{
+      if(roleAtLeast('schichtleitung')){
+        const verlauf=document.createElement('button');verlauf.className='secondary';verlauf.textContent='Verlauf';verlauf.onclick=()=>zeigeMitarbeiterVerlauf(m);actionCell.append(verlauf,document.createTextNode(' '));
+      }
+      const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>editMitarbeiter(m);actionCell.append(edit,document.createTextNode(' '));
+      const del=document.createElement('button');del.className='danger';del.textContent='Löschen';del.onclick=()=>deleteMitarbeiter(m);actionCell.append(del);
+    }
   }
   msg('mitarbeiterMessage',rows.length+' von '+mitarbeiterListe.length+' Mitarbeiter:in(nen) angezeigt.');
 }
@@ -865,7 +1031,7 @@ $('mitarbeiterDuplikateToggle').onclick=()=>{
   if($('mitarbeiterDuplikateWrap').classList.contains('hidden'))ladeMitarbeiterDuplikate();
   else $('mitarbeiterDuplikateWrap').classList.add('hidden');
 };
-const MITARBEITER_EREIGNIS_LABEL={krank_gemeldet:'Krank gemeldet',krankmeldung_aktualisiert:'Krankmeldung aktualisiert',krankmeldung_geloescht:'Krankmeldung gelöscht',dienstplan_krank_aufgehoben:'Krank-Status aufgehoben',stammdaten_angelegt:'Stammdaten angelegt',stammdaten_geaendert:'Stammdaten geändert',stammdaten_deaktiviert:'Stammdaten deaktiviert',stammdaten_geloescht:'Stammdaten gelöscht'};
+const MITARBEITER_EREIGNIS_LABEL={krank_gemeldet:'Krank gemeldet',krankmeldung_aktualisiert:'Krankmeldung aktualisiert',krankmeldung_geloescht:'Krankmeldung gelöscht',dienstplan_krank_aufgehoben:'Krank-Status aufgehoben',stammdaten_angelegt:'Stammdaten angelegt',stammdaten_geaendert:'Stammdaten geändert',stammdaten_deaktiviert:'Stammdaten deaktiviert',stammdaten_geloescht:'Stammdaten gelöscht',stammdaten_wiederhergestellt:'Stammdaten wiederhergestellt'};
 async function zeigeMitarbeiterVerlauf(m){
   $('mitarbeiterVerlaufName').textContent=m.vorname+' '+m.nachname;
   $('mitarbeiterVerlaufCard').classList.remove('hidden');
@@ -894,9 +1060,20 @@ function editMitarbeiter(m){
   $('mitarbeiterFormTitle').textContent='Mitarbeiter:in bearbeiten';$('maSaveBtn').textContent='Änderungen speichern';
 }
 async function deleteMitarbeiter(m){
-  if(!window.confirm('Mitarbeiter:in '+m.vorname+' '+m.nachname+' wirklich löschen?'))return;
-  try{await api('/api/mitarbeiter/'+m.id,{method:'DELETE'});await loadMitarbeiter()}
-  catch(err){msg('mitarbeiterMessage','Löschen fehlgeschlagen: '+err.message,true)}
+  if(!window.confirm('Mitarbeiter:in '+m.vorname+' '+m.nachname+' wirklich entfernen? Der Datensatz bleibt erhalten und kann über "Wiederherstellen" rückgängig gemacht werden.'))return;
+  try{
+    await api('/api/mitarbeiter/'+m.id,{method:'DELETE'});
+    await loadMitarbeiter();
+    if(!$('mitarbeiterDuplikateWrap').classList.contains('hidden'))await ladeMitarbeiterDuplikate();
+  }
+  catch(err){msg('mitarbeiterMessage','Entfernen fehlgeschlagen: '+err.message,true)}
+}
+async function restoreMitarbeiter(m){
+  try{
+    await api('/api/mitarbeiter/'+m.id+'/wiederherstellen',{method:'POST'});
+    await loadMitarbeiter();
+  }
+  catch(err){msg('mitarbeiterMessage','Wiederherstellen fehlgeschlagen: '+err.message,true)}
 }
 
 /* ============================= Änderungsprotokoll ============================= */
@@ -946,21 +1123,32 @@ $('auditExport').onclick=()=>{
 
 /* ============================= Dienstplan ============================= */
 let dienstplanRows=[],dienstplanEditingId=null,dienstplanEditingEntry=null,dienstplanKrankPopupEntry=null,dienstplanKrankPopupQueue=[];
+let bekannteKuerzelSet=null;
+async function ladeBekannteKuerzel(){
+  if(bekannteKuerzelSet)return;
+  try{const liste=await api('/api/dienstplan/bekannte-kuerzel');bekannteKuerzelSet=new Set(liste.map(k=>k.toUpperCase()))}
+  catch(err){bekannteKuerzelSet=null} // Abruf fehlgeschlagen (z. B. älterer Server ohne diesen Endpunkt) -
+                                      // KEIN leeres Set setzen, sonst würde jedes Kürzel faelschlich als
+                                      // "unbekannt" markiert; stattdessen bleibt die Markierung ganz aus und
+                                      // beim nächsten Laden wird erneut versucht.
+}
 $('dienstplanImportForm').onsubmit=async e=>{
   e.preventDefault();
   const file=$('dienstplanDatei').files[0];
   if(!file){msg('dienstplanImportMessage','Bitte eine Excel-Datei auswählen.',true);return}
   const fd=new FormData();fd.append('datei',file);
   msg('dienstplanImportMessage','Import läuft …');
+  $('dienstplanImportHinweise').replaceChildren();
   try{
     const result=await apiUpload('/api/dienstplan/import',fd);
     if(!result.success){msg('dienstplanImportMessage','Import fehlgeschlagen: '+result.error,true);return}
     let text=result.anzahl_eintraege+' Einträge importiert ('+result.anzahl_krank+' krank, '+result.anzahl_bulmorfahrer+' Bulmor-Fahrer:in).';
     if(result.unbekannte_dienste.length)text+=' Unbekannte Dienstkürzel: '+result.unbekannte_dienste.join(', ');
     if(result.krank_ohne_meldung&&result.krank_ohne_meldung.length)text+=' · '+result.krank_ohne_meldung.length+' krank gemeldete:r Mitarbeiter:in ohne Krankmeldung erkannt.';
-    if(result.nicht_zugeordnete_mitarbeiter&&result.nicht_zugeordnete_mitarbeiter.length)text+=' · Nicht den Stammdaten zugeordnet: '+result.nicht_zugeordnete_mitarbeiter.join(', ')+'.';
+    if(result.nicht_zugeordnete_mitarbeiter&&result.nicht_zugeordnete_mitarbeiter.length)text+=' · Nicht den Stammdaten zugeordnet: '+result.nicht_zugeordnete_mitarbeiter.map(m=>m.mitarbeiter_name).join(', ')+'.';
     if(result.unsichere_zuordnungen&&result.unsichere_zuordnungen.length)text+=' · Bitte prüfen (unsichere Zuordnung wegen Tippfehler/Dreher): '+result.unsichere_zuordnungen.map(u=>u.mitarbeiter_name+' → '+u.vorschlag).join(', ')+'.';
     msg('dienstplanImportMessage',text);
+    renderImportHinweise(result);
     $('dienstplanDatum').value=result.datum;
     await loadDienstplan();
     if(result.krank_ohne_meldung&&result.krank_ohne_meldung.length){
@@ -969,6 +1157,68 @@ $('dienstplanImportForm').onsubmit=async e=>{
     }
   }catch(err){msg('dienstplanImportMessage','Import fehlgeschlagen: '+err.message,true)}
 };
+
+/* Zeigt zu "nicht zugeordneten"/"unsicher zugeordneten" Import-Namen (siehe
+   UnsichereZuordnung/NichtZugeordneterMitarbeiter in schemas.py) eine
+   handlungsfähige Liste an: direkt zu "Mitarbeiter:in anlegen" springen
+   (vorbelegt mit Vor-/Nachname aus der Excel-Zelle) bzw. eine automatische
+   Tippfehler-/Dreher-Zuordnung bestätigen oder ablehnen. */
+function renderImportHinweise(result){
+  const wrap=$('dienstplanImportHinweise');
+  wrap.replaceChildren();
+  const nichtZugeordnet=result.nicht_zugeordnete_mitarbeiter||[];
+  const unsicher=result.unsichere_zuordnungen||[];
+  if(nichtZugeordnet.length){
+    const box=document.createElement('div');box.className='boardcard';
+    const h4=document.createElement('h4');h4.append(text('Nicht den Stammdaten zugeordnet ('+nichtZugeordnet.length+')'));
+    const p=document.createElement('p');p.className='small muted';p.append(text('Diese Einträge wurden trotzdem in den Dienstplan übernommen, aber keinem Mitarbeiter-Stammdatensatz zugeordnet.'));
+    const ul=document.createElement('ul');ul.className='linklist';
+    for(const m of nichtZugeordnet){
+      const li=document.createElement('li');li.append(text(m.mitarbeiter_name));
+      const anlegen=document.createElement('button');anlegen.type='button';anlegen.className='secondary small';anlegen.textContent='Jetzt anlegen';
+      anlegen.onclick=()=>oeffneMitarbeiterAnlegenMitVorbelegung(m.vorname,m.nachname,m.mitarbeiter_name);
+      li.append(anlegen);ul.append(li);
+    }
+    box.append(h4,p,ul);wrap.append(box);
+  }
+  if(unsicher.length){
+    const box=document.createElement('div');box.className='boardcard';
+    const h4=document.createElement('h4');h4.append(text('Unsichere Zuordnung - bitte prüfen ('+unsicher.length+')'));
+    const p=document.createElement('p');p.className='small muted';p.append(text('Wegen Tippfehlern/vertauschten Namen automatisch zugeordnet - bitte bestätigen oder ablehnen.'));
+    const ul=document.createElement('ul');ul.className='linklist';
+    for(const u of unsicher){
+      const li=document.createElement('li');li.append(text(u.mitarbeiter_name+' → '+(u.vorschlag||'?')));
+      const bestaetigen=document.createElement('button');bestaetigen.type='button';bestaetigen.className='secondary small';bestaetigen.textContent='Bestätigen';
+      const ablehnen=document.createElement('button');ablehnen.type='button';ablehnen.className='danger small';ablehnen.textContent='Ablehnen';
+      bestaetigen.onclick=async()=>{
+        bestaetigen.disabled=true;ablehnen.disabled=true;
+        try{await api('/api/dienstplan/'+u.eintrag_id+'/zuordnung/bestaetigen',{method:'POST'});li.remove();msg('dienstplanImportMessage','Zuordnung von "'+u.mitarbeiter_name+'" bestätigt.')}
+        catch(err){bestaetigen.disabled=false;ablehnen.disabled=false;msg('dienstplanImportMessage','Bestätigen fehlgeschlagen: '+err.message,true)}
+      };
+      ablehnen.onclick=async()=>{
+        bestaetigen.disabled=true;ablehnen.disabled=true;
+        try{
+          await api('/api/dienstplan/'+u.eintrag_id+'/zuordnung/ablehnen',{method:'POST'});
+          li.remove();
+          await loadDienstplan();
+          oeffneMitarbeiterAnlegenMitVorbelegung(u.vorname,u.nachname,u.mitarbeiter_name);
+        }catch(err){bestaetigen.disabled=false;ablehnen.disabled=false;msg('dienstplanImportMessage','Ablehnen fehlgeschlagen: '+err.message,true)}
+      };
+      li.append(bestaetigen,document.createTextNode(' '),ablehnen);ul.append(li);
+    }
+    box.append(h4,p,ul);wrap.append(box);
+  }
+}
+function oeffneMitarbeiterAnlegenMitVorbelegung(vorname,nachname,herkunftsName){
+  switchViewTo('personal');
+  showPersonalTab('mitarbeiter');
+  resetMitarbeiterForm();
+  window.scrollTo({top:0,behavior:'smooth'});
+  $('maVorname').value=vorname||'';
+  $('maNachname').value=nachname||'';
+  msg('maFormMessage','Vorbelegt aus dem Dienstplan-Import ("'+(herkunftsName||'')+'") - bitte prüfen und speichern.');
+  (vorname?$('maNachname'):$('maVorname')).focus();
+}
 $('dienstplanLaden').onclick=loadDienstplan;
 $('dienstplanGeloeschteAnzeigen').addEventListener('change',loadDienstplan);
 $('dienstplanHinzufuegenOeffnen').onclick=()=>{
@@ -991,6 +1241,7 @@ $('dienstplanHinzufuegenForm').onsubmit=async e=>{
     notiz:$('dpAddNotiz').value.trim(),
   };
   if(!payload.mitarbeiter_name){msg('dienstplanHinzufuegenMessage','Bitte einen Namen angeben.',true);return}
+  if(!istMitarbeiterNameBekannt(payload.mitarbeiter_name)){msg('dienstplanHinzufuegenMessage','„'+payload.mitarbeiter_name+'“ ist kein aktiver Mitarbeiter-Stammdatensatz. Bitte aus der Vorschlagsliste auswählen (ggf. zuerst in den Mitarbeiter-Stammdaten anlegen).',true);return}
   try{
     await api('/api/dienstplan',{method:'POST',body:JSON.stringify(payload)});
     msg('dienstplanHinzufuegenMessage','Hinzugefügt.');
@@ -1014,6 +1265,7 @@ for(const id of ['dienstplanSuche','dienstplanStatusFilter','dienstplanSortierun
 async function loadDienstplan(){
   const tag=$('dienstplanDatum').value||today();
   try{
+    await ladeBekannteKuerzel();
     const mitGeloeschten=$('dienstplanGeloeschteAnzeigen').checked;
     dienstplanRows=await api('/api/dienstplan?von='+tag+'&bis='+tag+(mitGeloeschten?'&mit_geloeschten=true':''));
     renderDienstplan();
@@ -1150,16 +1402,49 @@ function renderDienstplan(){
     tr.classList.toggle('dp-virtuell',!!e.virtuell);
     tr.classList.toggle('dp-geloescht',!!e.geloescht);
     tr.classList.toggle('dp-stark-abweichend',starkAbweichendIds.has(String(e.id)));
-    cell(tr,e.mitarbeiter_name);cell(tr,e.dienst_kategorie||(e.effektive_kategorie?'(KRANK, eig. '+e.effektive_kategorie+')':'–'));cell(tr,e.start_zeit||'–');cell(tr,e.end_zeit||'–');
+    cell(tr,e.mitarbeiter_name);
+    const dienstCell=tr.insertCell();
+    dienstCell.append(text(e.dienst_kategorie||(e.effektive_kategorie?'(KRANK, eig. '+e.effektive_kategorie+')':'–')));
+    if(!e.ist_krank&&e.dienst_kategorie&&bekannteKuerzelSet&&!bekannteKuerzelSet.has(e.dienst_kategorie.toUpperCase())){
+      const p=document.createElement('span');p.className='pill warn';p.style.marginLeft='6px';
+      p.title='Dieses Dienstkürzel ist dem System nicht bekannt - bitte prüfen (Tippfehler oder neues Kürzel?).';
+      p.textContent='Unbekanntes Kürzel';dienstCell.append(document.createTextNode(' '),p);
+    }
+    const beginnCell=tr.insertCell();beginnCell.append(text(e.start_zeit||'–'));
+    if(e.verspaetung_minuten>0){
+      const p=document.createElement('span');p.className='pill warn';p.style.marginLeft='6px';
+      p.title='Verspätung erfasst: '+e.verspaetung_minuten+' Minuten (geplanter Beginn: '+(e.start_zeit||'–')+')'
+        +(e.verspaetung_erfasst_von?(' · erfasst von '+e.verspaetung_erfasst_von):'')
+        +(e.verspaetung_erfasst_am?(' am '+new Date(e.verspaetung_erfasst_am).toLocaleString('de-DE')):'')+'.';
+      p.textContent='+'+e.verspaetung_minuten+' Min';beginnCell.append(document.createTextNode(' '),p);
+    }
+    cell(tr,e.end_zeit||'–');
     const statusCell=tr.insertCell();
     if(e.ist_krank){const p=document.createElement('span');p.className='pill';p.textContent='Krank';statusCell.append(p,document.createTextNode(' '))}
     if(e.ist_bulmorfahrer){const p=document.createElement('span');p.className='pill warn';p.textContent='Bulmor-Fahrer:in';statusCell.append(p,document.createTextNode(' '))}
     if(e.zeit_abweichend){const p=document.createElement('span');p.className='pill info';p.textContent='Abweichende Zeit';statusCell.append(p,document.createTextNode(' '))}
     if(starkAbweichendIds.has(String(e.id))){const p=document.createElement('span');p.className='pill warn';p.title='Beginn oder Ende weicht um mehr als 1 Std. vom Rest der eigenen Dienstart ab.';p.textContent='> 1 Std. vom Rest abweichend';statusCell.append(p,document.createTextNode(' '))}
     if(e.virtuell){const p=document.createElement('span');p.className='pill info';p.title='Aus laufender Krankmeldung übernommen, noch kein Dienstplan für diesen Tag importiert.';p.textContent='Ohne Dienstplan';statusCell.append(p,document.createTextNode(' '))}
-    if(e.manuell_hinzugefuegt){const p=document.createElement('span');p.className='pill info';p.title='Manuell zum Dienstplan hinzugefügt (nicht aus dem Excel-Import).';p.textContent='Hinzugefügt';statusCell.append(p,document.createTextNode(' '))}
-    if(e.geloescht){const p=document.createElement('span');p.className='pill warn';p.title='Aus dem Dienstplan entfernt (weich gelöscht, über "Wiederherstellen" rückgängig machbar).';p.textContent='Entfernt';statusCell.append(p,document.createTextNode(' '))}
-    if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend&&!e.virtuell&&!e.manuell_hinzugefuegt&&!e.geloescht&&!starkAbweichendIds.has(String(e.id)))statusCell.append(text('–'));
+    if(e.manuell_hinzugefuegt){
+      const p=document.createElement('span');p.className='pill info';
+      p.title='Manuell zum Dienstplan hinzugefügt (nicht aus dem Excel-Import)'
+        +(e.hinzugefuegt_durch?(' von '+e.hinzugefuegt_durch):'')
+        +(e.created_at?(' am '+new Date(e.created_at).toLocaleString('de-DE')):'')+'.';
+      p.textContent='Hinzugefügt';statusCell.append(p,document.createTextNode(' '));
+    }
+    if(e.geloescht){
+      const p=document.createElement('span');p.className='pill warn';
+      p.title='Aus dem Dienstplan entfernt (weich gelöscht, über "Wiederherstellen" rückgängig machbar)'
+        +(e.geloescht_durch?(' von '+e.geloescht_durch):'')
+        +(e.geloescht_am?(' am '+new Date(e.geloescht_am).toLocaleString('de-DE')):'')+'.';
+      p.textContent='Entfernt';statusCell.append(p,document.createTextNode(' '));
+    }else if(e.wiederhergestellt_am){
+      const p=document.createElement('span');p.className='pill info';
+      p.title='Wiederhergestellt'+(e.wiederhergestellt_durch?(' von '+e.wiederhergestellt_durch):'')
+        +' am '+new Date(e.wiederhergestellt_am).toLocaleString('de-DE')+'.';
+      p.textContent='Wiederhergestellt';statusCell.append(p,document.createTextNode(' '));
+    }
+    if(!e.ist_krank&&!e.ist_bulmorfahrer&&!e.zeit_abweichend&&!e.virtuell&&!e.manuell_hinzugefuegt&&!e.geloescht&&!e.wiederhergestellt_am&&!starkAbweichendIds.has(String(e.id)))statusCell.append(text('–'));
     cell(tr,e.notiz||'–');
     const rechnungCell=tr.insertCell();
     const ausgeschlossen=!!e.ausgeschlossen;
@@ -1180,12 +1465,13 @@ function renderDienstplan(){
     }
     if(ausgeschlossen){const p=document.createElement('span');p.className='pill';p.style.marginLeft='6px';p.textContent='ausgeschlossen';rechnungCell.append(p)}
     else if(e.virtuell||!roleAtLeast('disponent'))rechnungCell.append(text('–'));
-    const actionCell=tr.insertCell();actionCell.dataset.minRole='disponent';actionCell.classList.toggle('hidden',!roleAtLeast('disponent'));
+    const actionCell=tr.insertCell();actionCell.dataset.minRole='disponent';actionCell.classList.toggle('hidden',!roleAtLeast('disponent'));actionCell.style.whiteSpace='nowrap';
     const entfernenCell=tr.insertCell();entfernenCell.dataset.minRole='disponent';entfernenCell.classList.toggle('hidden',!roleAtLeast('disponent'));
     if(e.virtuell){actionCell.append(text('–'));entfernenCell.append(text('–'))}
     else{
       if(!e.geloescht){
-        const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit);
+        const edit=document.createElement('button');edit.className='secondary';edit.textContent='Bearbeiten';edit.onclick=()=>openDienstplanEdit(e);actionCell.append(edit,document.createTextNode(' '));
+        const ver=document.createElement('button');ver.className='secondary';ver.textContent='Ver.';ver.title='Verspätung erfassen';ver.onclick=()=>openDienstplanVerspaetung(e);actionCell.append(ver);
         const del=document.createElement('button');del.className='danger';del.textContent='Entfernen';
         del.onclick=async()=>{
           if(!window.confirm('"'+e.mitarbeiter_name+'" aus dem Dienstplan entfernen? Bleibt als "Entfernt" nachvollziehbar und kann wiederhergestellt werden.'))return;
@@ -1222,6 +1508,57 @@ function openDienstplanEdit(e){
   $('dienstplanEditCard').scrollIntoView({behavior:'smooth',block:'center'});
 }
 $('dpEditAbbrechen').onclick=()=>{dienstplanEditingId=null;dienstplanEditingEntry=null;$('dienstplanEditCard').classList.add('hidden')};
+
+/* Verspätungs-Popup ("Ver."-Button): Schnellwahl in 5-Minuten-Schritten bis
+   60 Minuten + manuelle Eingabe (auch darüber hinaus). Überschreibt NICHT
+   die geplante Beginnzeit, sondern speichert verspaetung_minuten zusätzlich
+   (siehe models.py:DienstplanEintrag.verspaetung_minuten). */
+let dienstplanVerEintrag=null;
+function minutenZuZeit(start,plusMinuten){
+  const basis=zeitZuMinuten(start);
+  if(basis===null)return null;
+  const gesamt=(basis+Number(plusMinuten||0))%1440;
+  const h=Math.floor(gesamt/60),m=gesamt%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+}
+function aktualisiereVerspaetungVorschau(){
+  const minuten=Number($('dpVerMinuten').value||0);
+  const vorschau=dienstplanVerEintrag?minutenZuZeit(dienstplanVerEintrag.start_zeit,minuten):null;
+  $('dpVerVorschau').value=vorschau||(dienstplanVerEintrag&&dienstplanVerEintrag.start_zeit?'–':'kein geplanter Beginn hinterlegt');
+}
+function openDienstplanVerspaetung(e){
+  dienstplanVerEintrag=e;
+  $('dienstplanVerName').textContent=e.mitarbeiter_name;
+  $('dienstplanVerGeplant').textContent=e.start_zeit||'–';
+  $('dpVerMinuten').value=e.verspaetung_minuten||0;
+  const schnellwahl=$('dienstplanVerSchnellwahl');schnellwahl.replaceChildren();
+  for(let m=0;m<=60;m+=5){
+    const btn=document.createElement('button');btn.type='button';btn.className='secondary small';btn.textContent=m===0?'0':'+'+m;
+    btn.onclick=()=>{$('dpVerMinuten').value=m;aktualisiereVerspaetungVorschau()};
+    schnellwahl.append(btn);
+  }
+  aktualisiereVerspaetungVorschau();
+  msg('dienstplanVerMessage','');
+  $('dienstplanVerCard').classList.remove('hidden');
+  $('dienstplanVerCard').scrollIntoView({behavior:'smooth',block:'center'});
+}
+$('dpVerMinuten').addEventListener('input',aktualisiereVerspaetungVorschau);
+$('dpVerAbbrechen').onclick=()=>{dienstplanVerEintrag=null;$('dienstplanVerCard').classList.add('hidden')};
+$('dienstplanVerForm').onsubmit=async e=>{
+  e.preventDefault();
+  if(!dienstplanVerEintrag)return;
+  const minuten=Number($('dpVerMinuten').value||0);
+  if(minuten<0){msg('dienstplanVerMessage','Die Verspätung darf nicht negativ sein.',true);return}
+  try{
+    await api('/api/dienstplan/'+dienstplanVerEintrag.id,{method:'PUT',body:JSON.stringify({verspaetung_minuten:minuten})});
+    msg('dienstplanVerMessage','Gespeichert.');
+    if(!$('dienstplanAenderungenCard').classList.contains('hidden'))await loadDienstplanAudit();
+    dienstplanVerEintrag=null;
+    $('dienstplanVerCard').classList.add('hidden');
+    await loadDienstplan();
+  }catch(err){msg('dienstplanVerMessage','Speichern fehlgeschlagen: '+err.message,true)}
+};
+
 $('dienstplanEditForm').onsubmit=async e=>{
   e.preventDefault();
   if(!dienstplanEditingId)return;
@@ -1249,7 +1586,7 @@ $('dienstplanEditForm').onsubmit=async e=>{
     await api('/api/dienstplan/'+dienstplanEditingId,{method:'PUT',body:JSON.stringify(payload)});
     msg('dienstplanEditMessage',auchKrankmeldungLoeschen?'Gespeichert, Krankmeldung gelöscht.':'Gespeichert.');
     $('dienstplanEditCard').classList.add('hidden');
-    if(roleAtLeast('schichtleitung')&&!$('dienstplanAuditWrap').classList.contains('hidden'))await loadDienstplanAudit();
+    if(!$('dienstplanAenderungenCard').classList.contains('hidden'))await loadDienstplanAudit();
     if(!warKrank&&istJetztKrank)openKrankPopup(dienstplanEditingEntry);
     dienstplanEditingId=null;dienstplanEditingEntry=null;
     await loadDienstplan();
@@ -1301,31 +1638,116 @@ $('dpKrankPopupForm').onsubmit=async e=>{
     setTimeout(dpKrankPopupWeiterOderSchliessen,700);
   }catch(err){msg('dpKrankPopupMessage','Anlegen fehlgeschlagen: '+err.message,true)}
 };
-$('dienstplanAuditToggle').onclick=async()=>{
-  const wrap=$('dienstplanAuditWrap');
-  const zeigen=wrap.classList.contains('hidden');
-  wrap.classList.toggle('hidden',!zeigen);
-  $('dienstplanAuditToggle').textContent=zeigen?'Ausblenden':'Anzeigen';
-  if(zeigen)await loadDienstplanAudit();
+$('dienstplanAenderungenOeffnen').onclick=async()=>{
+  $('dienstplanAenderungenCard').classList.remove('hidden');
+  $('dienstplanAenderungenCard').scrollIntoView({behavior:'smooth',block:'center'});
+  const angezeigterTag=$('dienstplanDatum').value||today();
+  $('dpAendVon').value=angezeigterTag;$('dpAendBis').value=angezeigterTag;
+  await loadDienstplanAudit();
 };
-async function loadDienstplanAudit(){
+$('dpAendSchliessen').onclick=()=>$('dienstplanAenderungenCard').classList.add('hidden');
+$('dpAendAnzeigen').onclick=loadDienstplanAudit;
+$('dpAendExport').onclick=async()=>{
+  const von=$('dpAendVon').value,bis=$('dpAendBis').value;
+  if(!von||!bis){msg('dienstplanAenderungenMessage','Bitte Von und Bis angeben.',true);return}
+  msg('dienstplanAenderungenMessage','Export wird erstellt …');
   try{
-    const rows=await api('/api/dienstplan/audit');
+    const {blob,filename}=await apiDownload('/api/dienstplan/audit/export?von='+von+'&bis='+bis);
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();
+    URL.revokeObjectURL(url);
+    msg('dienstplanAenderungenMessage','Export heruntergeladen: '+filename);
+  }catch(err){msg('dienstplanAenderungenMessage','Export fehlgeschlagen: '+err.message,true)}
+};
+const AKTION_LABEL={'HINZUGEFÜGT':'Hinzugefügt','BEARBEITET':'Bearbeitet','ENTFERNT':'Entfernt','WIEDERHERGESTELLT':'Wiederhergestellt'};
+async function loadDienstplanAudit(){
+  const von=$('dpAendVon').value,bis=$('dpAendBis').value;
+  if(von&&bis&&bis<von){msg('dienstplanAenderungenMessage','"Bis" darf nicht vor "Von" liegen.',true);return}
+  msg('dienstplanAenderungenMessage','Lädt …');
+  try{
+    let url='/api/dienstplan/audit';
+    if(von&&bis)url+='?von='+von+'&bis='+bis;
+    const rows=await api(url);
     const body=$('dienstplanAuditEntries');body.replaceChildren();
-    const feldnamen={ist_krank:'Krank',ist_bulmorfahrer:'Bulmor-Fahrer:in',start_zeit:'Beginn',end_zeit:'Ende',notiz:'Notiz'};
+    const feldnamen={mitarbeiter_name:'Mitarbeiter',dienst_kategorie:'Dienst',ist_krank:'Krank',ist_bulmorfahrer:'Bulmor-Fahrer:in',ausgeschlossen:'Ausgeschlossen',start_zeit:'Beginn',end_zeit:'Ende',verspaetung_minuten:'Verspätung (Minuten)',geloescht:'Entfernt',notiz:'Notiz'};
     for(const r of rows){
       const tr=body.insertRow();
+      cell(tr,r.datum?fmt(r.datum):'–');
       cell(tr,new Date(r.event_at).toLocaleString('de-DE'));
+      cell(tr,AKTION_LABEL[r.action]||r.action);
       cell(tr,r.mitarbeiter_name||'–');
       cell(tr,r.actor_username||ROLLEN_LABEL[r.actor_role]||r.actor_role);
       const td=tr.insertCell();td.className='audit-item';
       const before=r.old_data||{},after=r.new_data||{};
-      const changes=Object.keys(feldnamen).filter(k=>JSON.stringify(before[k]??null)!==JSON.stringify(after[k]??null));
-      if(!changes.length)td.append(text('Keine Änderung'));
+      const changes=Object.keys(feldnamen).filter(k=>k in after&&JSON.stringify(before[k]??null)!==JSON.stringify(after[k]??null));
+      if(!changes.length)td.append(text('Keine Feldänderung erfasst.'));
       for(const k of changes){const div=document.createElement('div');div.className='audit-change';const b=document.createElement('b');b.append(text(feldnamen[k]+': '));div.append(b,text(String(before[k]??'–')+' → '+String(after[k]??'–')));td.append(div)}
     }
-  }catch(err){msg('dienstplanMessage','Protokoll konnte nicht geladen werden: '+err.message,true)}
+    msg('dienstplanAenderungenMessage',rows.length+' Änderung(en)'+(von&&bis?(' im Zeitraum '+fmt(von)+' – '+fmt(bis)):'')+'.');
+  }catch(err){msg('dienstplanAenderungenMessage','Änderungen konnten nicht geladen werden: '+err.message,true)}
 }
+
+/* ============================= Dienstplan Auswertung ============================= */
+let dpaInitialisiert=false;
+async function initDienstplanAuswertung(){
+  if(dpaInitialisiert)return;
+  dpaInitialisiert=true;
+  const jetzt=new Date();
+  const monatsanfang=new Date(jetzt.getFullYear(),jetzt.getMonth(),1);
+  const local=d=>{const l=new Date(d.getTime()-d.getTimezoneOffset()*60000);return l.toISOString().slice(0,10)};
+  $('dpaVon').value=local(monatsanfang);
+  $('dpaBis').value=today();
+  await ladeDienstplanAuswertung();
+}
+async function ladeDienstplanAuswertung(){
+  const von=$('dpaVon').value,bis=$('dpaBis').value;
+  if(!von||!bis){msg('dpaMessage','Bitte Von und Bis angeben.',true);return}
+  if(bis<von){msg('dpaMessage','"Bis" darf nicht vor "Von" liegen.',true);return}
+  msg('dpaMessage','Lädt …');
+  try{
+    const d=await api('/api/dienstplan/auswertung?von='+von+'&bis='+bis);
+    const zsfBody=$('dpaVerspaetungZsf');zsfBody.replaceChildren();
+    for(const r of d.verspaetungen_zusammenfassung){
+      const tr=zsfBody.insertRow();
+      cell(tr,r.mitarbeiter_name);cell(tr,r.anzahl_verspaetungen);cell(tr,r.summe_verspaetung_minuten);
+    }
+    const detailBody=$('dpaVerspaetungDetail');detailBody.replaceChildren();
+    for(const r of d.verspaetungen){
+      const tr=detailBody.insertRow();
+      cell(tr,fmt(r.datum));cell(tr,r.mitarbeiter_name);cell(tr,r.dienst_kategorie||'–');cell(tr,r.geplanter_beginn||'–');
+      cell(tr,r.verspaetung_minuten);cell(tr,r.erfasst_von||'–');
+      cell(tr,r.erfasst_am?new Date(r.erfasst_am).toLocaleString('de-DE'):'–');
+    }
+    const krankZsfBody=$('dpaKrankZsf');krankZsfBody.replaceChildren();
+    for(const r of d.krankmeldungen_zusammenfassung){
+      const tr=krankZsfBody.insertRow();
+      cell(tr,r.mitarbeiter_name);cell(tr,r.anzahl_krankmeldungen);cell(tr,r.kranktage_gesamt);
+    }
+    const krankDetailBody=$('dpaKrankDetail');krankDetailBody.replaceChildren();
+    for(const r of d.krankmeldungen){
+      const tr=krankDetailBody.insertRow();
+      cell(tr,r.mitarbeiter_name);cell(tr,fmt(r.sick_from));cell(tr,fmt(r.sick_to));cell(tr,r.kranktage);
+      cell(tr,r.accepted_by||'–');cell(tr,fmt(r.reported_at));
+    }
+    msg('dpaMessage',
+      d.verspaetungen.length+' Verspätung(en) bei '+d.verspaetungen_zusammenfassung.length+' Mitarbeiter:in(nen) · '
+      +d.krankmeldungen.length+' Krankmeldung(en) bei '+d.krankmeldungen_zusammenfassung.length+' Mitarbeiter:in(nen) im Zeitraum.'
+    );
+  }catch(err){msg('dpaMessage','Auswertung fehlgeschlagen: '+err.message,true)}
+}
+$('dpaAuswerten').onclick=ladeDienstplanAuswertung;
+$('dpaExport').onclick=async()=>{
+  const von=$('dpaVon').value,bis=$('dpaBis').value;
+  if(!von||!bis){msg('dpaMessage','Bitte Von und Bis angeben.',true);return}
+  msg('dpaMessage','Export wird erstellt …');
+  try{
+    const {blob,filename}=await apiDownload('/api/dienstplan/auswertung/export?von='+von+'&bis='+bis);
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();
+    URL.revokeObjectURL(url);
+    msg('dpaMessage','Export heruntergeladen: '+filename);
+  }catch(err){msg('dpaMessage','Export fehlgeschlagen: '+err.message,true)}
+};
 
 /* ============================= Meldungen ============================= */
 function resetMeldungForm(){$('meldungForm').reset();$('meldungAngeheftet').value='false';msg('meldungFormMessage','')}

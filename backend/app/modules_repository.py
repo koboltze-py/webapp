@@ -112,8 +112,11 @@ class SqliteMitarbeiterRepository:
     def __init__(self, db):
         self.db = db
 
-    def list_mitarbeiter(self) -> list[Mitarbeiter]:
-        return self.db.query(Mitarbeiter).order_by(Mitarbeiter.nachname, Mitarbeiter.vorname).all()
+    def list_mitarbeiter(self, mit_geloeschten: bool = False) -> list[Mitarbeiter]:
+        q = self.db.query(Mitarbeiter)
+        if not mit_geloeschten:
+            q = q.filter(Mitarbeiter.geloescht.is_(False))
+        return q.order_by(Mitarbeiter.nachname, Mitarbeiter.vorname).all()
 
     def create_mitarbeiter(self, data: dict[str, Any]) -> Mitarbeiter:
         m = Mitarbeiter(**data)
@@ -133,12 +136,30 @@ class SqliteMitarbeiterRepository:
         self.db.refresh(m)
         return m
 
-    def delete_mitarbeiter(self, mitarbeiter_id) -> None:
+    def delete_mitarbeiter(self, mitarbeiter_id, actor_username: str = "") -> Mitarbeiter:
+        """Weiches Löschen (siehe models.py:Mitarbeiter.geloescht) - der
+        Datensatz bleibt erhalten und kann über restore_mitarbeiter
+        wiederhergestellt werden."""
         m = self.db.get(Mitarbeiter, int(mitarbeiter_id))
         if not m:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mitarbeiter nicht gefunden.")
-        self.db.delete(m)
+        m.geloescht = True
+        m.geloescht_am = datetime.utcnow()
+        m.geloescht_durch = actor_username
         self.db.commit()
+        self.db.refresh(m)
+        return m
+
+    def restore_mitarbeiter(self, mitarbeiter_id) -> Mitarbeiter:
+        m = self.db.get(Mitarbeiter, int(mitarbeiter_id))
+        if not m:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mitarbeiter nicht gefunden.")
+        m.geloescht = False
+        m.geloescht_am = None
+        m.geloescht_durch = ""
+        self.db.commit()
+        self.db.refresh(m)
+        return m
 
 
 class _SupabaseRoleRepository:
@@ -157,8 +178,11 @@ class _SupabaseRoleRepository:
 
 
 class SupabaseMitarbeiterRepository(_SupabaseRoleRepository):
-    def list_mitarbeiter(self) -> list[dict[str, Any]]:
-        return self._call(sb.list_rows, sb.MITARBEITER_TABLE, order="nachname.asc,vorname.asc")
+    def list_mitarbeiter(self, mit_geloeschten: bool = False) -> list[dict[str, Any]]:
+        rows = self._call(sb.list_rows, sb.MITARBEITER_TABLE, order="nachname.asc,vorname.asc")
+        if not mit_geloeschten:
+            rows = [r for r in rows if not r.get("geloescht")]
+        return rows
 
     def create_mitarbeiter(self, data: dict[str, Any]) -> dict[str, Any]:
         return self._call(sb.insert_row, sb.MITARBEITER_TABLE, data)
@@ -169,9 +193,23 @@ class SupabaseMitarbeiterRepository(_SupabaseRoleRepository):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mitarbeiter nicht gefunden.")
         return row
 
-    def delete_mitarbeiter(self, mitarbeiter_id) -> None:
-        if not self._call(sb.delete_row, sb.MITARBEITER_TABLE, mitarbeiter_id):
+    def delete_mitarbeiter(self, mitarbeiter_id, actor_username: str = "") -> dict[str, Any]:
+        row = self._call(
+            sb.update_row, sb.MITARBEITER_TABLE, mitarbeiter_id,
+            {"geloescht": True, "geloescht_am": datetime.utcnow(), "geloescht_durch": actor_username},
+        )
+        if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mitarbeiter nicht gefunden.")
+        return row
+
+    def restore_mitarbeiter(self, mitarbeiter_id) -> dict[str, Any]:
+        row = self._call(
+            sb.update_row, sb.MITARBEITER_TABLE, mitarbeiter_id,
+            {"geloescht": False, "geloescht_am": None, "geloescht_durch": ""},
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mitarbeiter nicht gefunden.")
+        return row
 
 
 def get_mitarbeiter_repository(request: Request) -> Iterator["SqliteMitarbeiterRepository | SupabaseMitarbeiterRepository"]:
@@ -189,10 +227,19 @@ def get_mitarbeiter_repository(request: Request) -> Iterator["SqliteMitarbeiterR
 # Dienstplan
 # ============================================================================
 
+# Felder, die im Dienstplan-Änderungsprotokoll (DienstplanAudit) als
+# old_data/new_data mitgeschrieben werden - gemeinsam fuer SQLite- und
+# Supabase-Implementierung, damit beide dieselben Felder liefern.
+_DIENSTPLAN_AUDIT_FELDER = (
+    "mitarbeiter_name", "mitarbeiter_id", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank",
+    "ist_bulmorfahrer", "ausgeschlossen", "geloescht", "verspaetung_minuten", "verspaetung_erfasst_von", "notiz",
+)
+
 
 def _snapshot_dienstplan_orm(row: DienstplanEintrag) -> dict[str, Any]:
     return {
         "mitarbeiter_name": row.mitarbeiter_name,
+        "mitarbeiter_id": row.mitarbeiter_id,
         "dienst_kategorie": row.dienst_kategorie,
         "start_zeit": row.start_zeit,
         "end_zeit": row.end_zeit,
@@ -200,6 +247,8 @@ def _snapshot_dienstplan_orm(row: DienstplanEintrag) -> dict[str, Any]:
         "ist_bulmorfahrer": row.ist_bulmorfahrer,
         "ausgeschlossen": row.ausgeschlossen,
         "geloescht": row.geloescht,
+        "verspaetung_minuten": row.verspaetung_minuten,
+        "verspaetung_erfasst_von": row.verspaetung_erfasst_von,
         "notiz": row.notiz,
     }
 
@@ -240,7 +289,7 @@ class SqliteDienstplanRepository:
             self.db.refresh(row)
         return rows
 
-    def create_eintrag(self, tag: date, data: dict[str, Any]) -> DienstplanEintrag:
+    def create_eintrag(self, tag: date, data: dict[str, Any], actor_role: str = "", actor_username: str = "") -> DienstplanEintrag:
         """Manuelles Hinzufügen einer einzelnen Person zu einem bereits
         bestehenden Tagesdienstplan (siehe routers/dienstplan.py:
         create_dienstplan_eintrag) - unabhängig von einem Excel-Import."""
@@ -248,9 +297,19 @@ class SqliteDienstplanRepository:
         self.db.add(row)
         self.db.commit()
         self.db.refresh(row)
+        self.db.add(
+            DienstplanAudit(
+                dienstplan_id=row.id, datum=row.datum, mitarbeiter_name=row.mitarbeiter_name, action="HINZUGEFÜGT",
+                actor_role=actor_role, actor_username=actor_username,
+                old_data=None, new_data=_snapshot_dienstplan_orm(row),
+            )
+        )
+        self.db.commit()
         return row
 
-    def update_eintrag(self, eintrag_id, data: dict[str, Any], actor_role: str, actor_username: str) -> DienstplanEintrag:
+    def update_eintrag(
+        self, eintrag_id, data: dict[str, Any], actor_role: str, actor_username: str, aktion: str = "BEARBEITET",
+    ) -> DienstplanEintrag:
         row = self.db.get(DienstplanEintrag, int(eintrag_id))
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dienstplan-Eintrag nicht gefunden.")
@@ -262,15 +321,24 @@ class SqliteDienstplanRepository:
         new_data = _snapshot_dienstplan_orm(row)
         self.db.add(
             DienstplanAudit(
-                dienstplan_id=row.id, mitarbeiter_name=row.mitarbeiter_name, action="UPDATE",
+                dienstplan_id=row.id, datum=row.datum, mitarbeiter_name=row.mitarbeiter_name, action=aktion,
                 actor_role=actor_role, actor_username=actor_username, old_data=old_data, new_data=new_data,
             )
         )
         self.db.commit()
         return row
 
-    def list_audit(self) -> list[DienstplanAudit]:
-        return self.db.query(DienstplanAudit).order_by(DienstplanAudit.event_at.desc(), DienstplanAudit.id.desc()).all()
+    def list_audit(self, von: Optional[date] = None, bis: Optional[date] = None) -> list[DienstplanAudit]:
+        """`von`/`bis` filtern auf den betroffenen DIENSTPLAN-TAG
+        (DienstplanAudit.datum), NICHT auf den Zeitpunkt der Änderung
+        (event_at) - damit z. B. "Änderungen für den 10.11." auch dann
+        gefunden werden, wenn die Korrektur erst später vorgenommen wurde."""
+        q = self.db.query(DienstplanAudit)
+        if von:
+            q = q.filter(DienstplanAudit.datum >= von)
+        if bis:
+            q = q.filter(DienstplanAudit.datum <= bis)
+        return q.order_by(DienstplanAudit.event_at.desc(), DienstplanAudit.id.desc()).all()
 
     def get_quelle(self, tag: date) -> dict[str, Any]:
         rows = self.db.query(DienstplanEintrag).filter(DienstplanEintrag.datum == tag).all()
@@ -314,13 +382,29 @@ class SupabaseDienstplanRepository(_SupabaseRoleRepository):
             neue.append(row)
         return neue
 
-    def create_eintrag(self, tag: date, data: dict[str, Any]) -> dict[str, Any]:
-        return self._call(
+    def create_eintrag(self, tag: date, data: dict[str, Any], actor_role: str = "", actor_username: str = "") -> dict[str, Any]:
+        row = self._call(
             sb.insert_row, sb.DIENSTPLAN_TABLE,
             {"datum": tag, "quelle_datei": "", "manuell_hinzugefuegt": True, **data},
         )
+        try:
+            self._call(
+                sb.insert_row, sb.DIENSTPLAN_AUDIT_TABLE,
+                {
+                    "dienstplan_id": row.get("id"), "datum": row.get("datum"),
+                    "mitarbeiter_name": row.get("mitarbeiter_name", ""),
+                    "action": "HINZUGEFÜGT", "actor_role": actor_role, "actor_username": actor_username,
+                    "old_data": None,
+                    "new_data": {k: row.get(k) for k in _DIENSTPLAN_AUDIT_FELDER},
+                },
+            )
+        except sb.SupabaseError as exc:
+            print(f"[WARN] Dienstplan-Änderungsprotokoll konnte nicht geschrieben werden: {exc}")
+        return row
 
-    def update_eintrag(self, eintrag_id, data: dict[str, Any], actor_role: str, actor_username: str) -> dict[str, Any]:
+    def update_eintrag(
+        self, eintrag_id, data: dict[str, Any], actor_role: str, actor_username: str, aktion: str = "BEARBEITET",
+    ) -> dict[str, Any]:
         old_row = self._call(sb.get_row, sb.DIENSTPLAN_TABLE, eintrag_id)
         if not old_row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dienstplan-Eintrag nicht gefunden.")
@@ -333,23 +417,31 @@ class SupabaseDienstplanRepository(_SupabaseRoleRepository):
                 sb.DIENSTPLAN_AUDIT_TABLE,
                 {
                     "dienstplan_id": eintrag_id,
+                    "datum": new_row.get("datum"),
                     "mitarbeiter_name": new_row.get("mitarbeiter_name", ""),
-                    "action": "UPDATE",
+                    "action": aktion,
                     "actor_role": actor_role,
                     "actor_username": actor_username,
-                    "old_data": {k: old_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "ausgeschlossen", "geloescht", "notiz")},
-                    "new_data": {k: new_row.get(k) for k in ("mitarbeiter_name", "dienst_kategorie", "start_zeit", "end_zeit", "ist_krank", "ist_bulmorfahrer", "ausgeschlossen", "geloescht", "notiz")},
+                    "old_data": {k: old_row.get(k) for k in _DIENSTPLAN_AUDIT_FELDER},
+                    "new_data": {k: new_row.get(k) for k in _DIENSTPLAN_AUDIT_FELDER},
                 },
             )
         except sb.SupabaseError as exc:
             print(f"[WARN] Dienstplan-Änderungsprotokoll konnte nicht geschrieben werden: {exc}")
         return new_row
 
-    def list_audit(self) -> list[dict[str, Any]]:
+    def list_audit(self, von: Optional[date] = None, bis: Optional[date] = None) -> list[dict[str, Any]]:
+        """`von`/`bis` filtern auf den betroffenen Dienstplan-Tag (Spalte
+        `datum`), nicht auf event_at, siehe SqliteDienstplanRepository."""
         try:
-            return self._call(sb.list_rows, sb.DIENSTPLAN_AUDIT_TABLE, order="event_at.desc,id.desc")
+            rows = self._call(sb.list_rows, sb.DIENSTPLAN_AUDIT_TABLE, order="event_at.desc,id.desc")
         except sb.SupabaseError:
             return []
+        if von:
+            rows = [r for r in rows if r.get("datum") and r["datum"] >= von.isoformat()]
+        if bis:
+            rows = [r for r in rows if r.get("datum") and r["datum"] <= bis.isoformat()]
+        return rows
 
     def get_quelle(self, tag: date) -> dict[str, Any]:
         rows = [r for r in self._call(sb.list_rows, sb.DIENSTPLAN_TABLE, order="id.asc") if r.get("datum") == tag.isoformat()]

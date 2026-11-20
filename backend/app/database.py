@@ -37,10 +37,26 @@ _NACHTRAEGLICHE_SPALTEN: dict[str, list[tuple[str, str]]] = {
         ("ausgeschlossen", "BOOLEAN NOT NULL DEFAULT 0"),
         ("geloescht", "BOOLEAN NOT NULL DEFAULT 0"),
         ("manuell_hinzugefuegt", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("verspaetung_minuten", "INTEGER NOT NULL DEFAULT 0"),
+        ("verspaetung_erfasst_von", "VARCHAR(80) NOT NULL DEFAULT ''"),
+        ("verspaetung_erfasst_am", "DATETIME"),
+        ("geloescht_am", "DATETIME"),
+        ("geloescht_durch", "VARCHAR(80) NOT NULL DEFAULT ''"),
+        ("wiederhergestellt_am", "DATETIME"),
+        ("wiederhergestellt_durch", "VARCHAR(80) NOT NULL DEFAULT ''"),
+        ("hinzugefuegt_durch", "VARCHAR(80) NOT NULL DEFAULT ''"),
     ],
     "benutzer": [
         ("sicherheitsfrage", "VARCHAR(200) NOT NULL DEFAULT ''"),
         ("sicherheitsantwort_hash", "VARCHAR(255)"),
+    ],
+    "dienstplan_audit": [
+        ("datum", "DATE"),
+    ],
+    "mitarbeiter": [
+        ("geloescht", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("geloescht_am", "DATETIME"),
+        ("geloescht_durch", "VARCHAR(80) NOT NULL DEFAULT ''"),
     ],
 }
 

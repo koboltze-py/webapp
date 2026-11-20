@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from ..aktivitaet import record_activity
 from ..deps import require_admin, require_disponent
+from ..mitarbeiter_matching import ist_mitarbeiter_name_bekannt
+from ..modules_repository import get_mitarbeiter_repository
 from ..repository import ReportsRepository, get_reports_repository
 from ..schemas import CaremanUpdate, ReportCreate, ReportOut, ReportUpdate
 
@@ -25,6 +27,19 @@ def _entity_id(obj) -> object:
     """ID eines Repository-Ergebnisses, egal ob ORM-Objekt (lokal) oder
     dict (Supabase-Zeile)."""
     return obj["id"] if isinstance(obj, dict) else obj.id
+
+
+def _pruefe_mitarbeiter_bekannt(employee: str, mitarbeiter_repo) -> None:
+    """Erzwingt, dass als 'Meldender' nur eine Person aus den aktiven
+    Mitarbeiter-Stammdaten eingetragen werden kann (siehe
+    mitarbeiter_matching.ist_mitarbeiter_name_bekannt) - verhindert neue,
+    nicht gepflegte Namen und hilft damit, die Stammdaten sauber zu halten."""
+    if not ist_mitarbeiter_name_bekannt(employee, mitarbeiter_repo.list_mitarbeiter()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{employee}' ist kein aktiver Mitarbeiter-Stammdatensatz. "
+            "Bitte aus den Mitarbeiter-Stammdaten auswählen (ggf. dort zuerst anlegen).",
+        )
 
 
 @router.get("", response_model=List[ReportOut])
@@ -40,8 +55,10 @@ def create_report(
     payload: ReportCreate,
     request: Request,
     repo: ReportsRepository = Depends(get_reports_repository),
+    mitarbeiter_repo=Depends(get_mitarbeiter_repository),
     role: str = Depends(require_disponent),
 ):
+    _pruefe_mitarbeiter_bekannt(payload.employee, mitarbeiter_repo)
     actor_username = request.session.get("username", role)
     report = repo.create_report(payload.model_dump(), role, actor_username)
     record_activity(
@@ -59,8 +76,10 @@ def update_report(
     payload: ReportUpdate,
     request: Request,
     repo: ReportsRepository = Depends(get_reports_repository),
+    mitarbeiter_repo=Depends(get_mitarbeiter_repository),
     role: str = Depends(require_disponent),
 ):
+    _pruefe_mitarbeiter_bekannt(payload.employee, mitarbeiter_repo)
     actor_username = request.session.get("username", role)
     report = repo.update_report(report_id, payload.model_dump(), role, actor_username)
     record_activity(

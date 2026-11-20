@@ -76,6 +76,18 @@ class Mitarbeiter(Base):
     telefon = Column(String(50), nullable=False, default="")
     aktiv = Column(Boolean, nullable=False, default=True)
     notizen = Column(String(1000), nullable=False, default="")
+    # Weich gelöscht (siehe routers/mitarbeiter.py: delete_mitarbeiter/
+    # restore_mitarbeiter) - analog zum Dienstplan (DienstplanEintrag.geloescht):
+    # bleibt in der Datenbank erhalten statt endgültig entfernt zu werden,
+    # damit u. a. doppelt angelegte Stammdatensätze (siehe
+    # mitarbeiter_duplikate.py) gefahrlos bereinigt und bei Bedarf
+    # wiederhergestellt werden können. geloescht_am/geloescht_durch werden
+    # direkt auf dem Datensatz gehalten (zusätzlich zur ausführlicheren
+    # Mitarbeiter-Historie/dem Änderungsprotokoll), damit im Frontend auch
+    # ohne Verlaufsabfrage sofort sichtbar ist, wer wann gelöscht hat.
+    geloescht = Column(Boolean, nullable=False, default=False)
+    geloescht_am = Column(DateTime, nullable=True)
+    geloescht_durch = Column(String(80), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -109,9 +121,31 @@ class DienstplanEintrag(Base):
     # restore_dienstplan_eintrag) - bleibt erhalten, damit sichtbar bleibt,
     # dass/wann ein Mitarbeiter aus dem Tagesdienstplan entfernt wurde.
     geloescht = Column(Boolean, nullable=False, default=False)
+    geloescht_am = Column(DateTime, nullable=True)
+    geloescht_durch = Column(String(80), nullable=False, default="")
+    # Wird beim Wiederherstellen gesetzt, OHNE geloescht_am/geloescht_durch
+    # zu löschen - so bleibt auch danach nachvollziehbar, wer/wann entfernt
+    # UND wer/wann wiederhergestellt hat (siehe "Wiederhergestellt"-Badge
+    # im Frontend).
+    wiederhergestellt_am = Column(DateTime, nullable=True)
+    wiederhergestellt_durch = Column(String(80), nullable=False, default="")
     # True = manuell über POST /api/dienstplan hinzugefügt statt aus einem
-    # Excel-Import übernommen (siehe create_dienstplan_eintrag).
+    # Excel-Import übernommen (siehe create_dienstplan_eintrag). Wer dies
+    # getan hat, siehe hinzugefuegt_durch; wann, siehe created_at.
     manuell_hinzugefuegt = Column(Boolean, nullable=False, default=False)
+    hinzugefuegt_durch = Column(String(80), nullable=False, default="")
+    # Nachträglich erfasste Verspätung in Minuten (siehe routers/dienstplan.py:
+    # "Ver."-Popup im Frontend), zusätzlich zur ursprünglich geplanten
+    # start_zeit - diese bleibt dabei bewusst unverändert, damit geplante und
+    # tatsächliche Zeit beide nachvollziehbar bleiben (siehe auch
+    # /api/dienstplan/auswertung für die Zeitraum-Auswertung).
+    verspaetung_minuten = Column(Integer, nullable=False, default=0)
+    # Wer/wann die aktuelle Verspätung zuletzt erfasst/geändert hat - direkt
+    # auf dem Datensatz gehalten (zusätzlich zum allgemeinen Dienstplan-
+    # Änderungsprotokoll), damit die Auswertung das ohne Zusatzabfrage
+    # anzeigen kann.
+    verspaetung_erfasst_von = Column(String(80), nullable=False, default="")
+    verspaetung_erfasst_am = Column(DateTime, nullable=True)
     notiz = Column(String(500), nullable=False, default="")
     quelle_datei = Column(String(255), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -132,17 +166,30 @@ class Meldung(Base):
 
 
 class DienstplanAudit(Base):
-    """Änderungsprotokoll für Dienstplan-Einträge (manuelle Korrekturen nach
-    dem Excel-Import: Krank-Status, Dienstzeiten, Notizen). Unveränderlich,
-    bleibt auch nach Lösch-/Neuimport des zugehörigen Eintrags erhalten."""
+    """Änderungsprotokoll für Dienstplan-Einträge: Hinzufügen, Bearbeiten
+    (Krank-Status, Dienstzeiten, Verspätung, Notizen), Entfernen und
+    Wiederherstellen. Unveränderlich, bleibt auch nach Lösch-/Neuimport des
+    zugehörigen Eintrags erhalten - Grundlage für den Tab "Änderungen" im
+    Frontend (siehe routers/dienstplan.py) und die automatisch gepflegte
+    Excel-Datei unter Backups/Tagesdienstpläne/Aenderungen/<Jahr>/<Monat>/."""
 
     __tablename__ = "dienstplan_audit"
 
     id = Column(Integer, primary_key=True, index=True)
     event_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     dienstplan_id = Column(Integer, nullable=True, index=True)
+    # Dienstplan-Tag (DienstplanEintrag.datum) des betroffenen Eintrags -
+    # NICHT dasselbe wie event_at (der Zeitpunkt der Änderung kann auf
+    # einem anderen Kalendertag liegen, z. B. nachträgliche Korrektur eines
+    # älteren Tages). Grundlage für die Tag-/Zeitraum-Auswahl im Tab
+    # "Änderungen" (siehe routers/dienstplan.py: list_dienstplan_audit) und
+    # die automatische Tagesdatei unter Aenderungen/<Jahr>/<Monat>/.
+    datum = Column(Date, nullable=True, index=True)
     mitarbeiter_name = Column(String(150), nullable=False, default="")
-    action = Column(String(10), nullable=False)  # UPDATE
+    # HINZUGEFÜGT / BEARBEITET / ENTFERNT / WIEDERHERGESTELLT (siehe
+    # routers/dienstplan.py) - frueher nur "UPDATE", daher absichtlich
+    # geraeumig genug fuer die ausfuehrlicheren Bezeichnungen.
+    action = Column(String(30), nullable=False)
     actor_role = Column(String(20), nullable=False)
     actor_username = Column(String(80), nullable=False, default="")
     old_data = Column(JSON, nullable=True)

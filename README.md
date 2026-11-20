@@ -227,7 +227,8 @@ automatisch in der lokalen SQLite-Datenbank statt in Supabase.
 - Dienstplan: Standard-Sortierung T/T10/T8/sonstige Tag/N/N10/DT/DT3/DN/DN3,
   Erkennung abweichender Dienstzeiten, Filter (Suche/Status/Tag-Nacht-Anzeige),
   manuelle Korrektur (Krank/Bulli-Fahrer/Zeiten/Notiz) mit eigenem
-  Änderungsprotokoll (`/api/dienstplan/audit`, ab Schichtleitung). In der
+  Änderungsprotokoll (`/api/dienstplan/audit`, Tab "Änderungen", für ALLE
+  Rollen). In der
   Standardsortierung wird - wie die bestehende "Dispo"-Trennlinie - auch
   der Übergang von Tag- zu Nachtdienst optisch klar abgesetzt.
 - Dienstplan: einzelne Personen können unabhängig von einem Excel-Import
@@ -332,9 +333,13 @@ bereits laufen, das Tool spricht dieselbe `/api/...`-Schnittstelle an
 (eigener Login, nur für die Rolle Admin).
 
 Funktionen:
-- **Mitarbeiter-Stammdaten**: anlegen, bearbeiten, löschen, sowie je
-  Mitarbeiter:in den Verlauf anzeigen (Button "Verlauf anzeigen": wie
-  oft/wann krank, Stammdaten-Änderungen).
+- **Mitarbeiter-Stammdaten**: anlegen, bearbeiten, weich löschen/
+  wiederherstellen (Checkbox "Entfernte anzeigen", Buttons "Löschen
+  (weich)"/"Wiederherstellen" - entspricht derselben weichen Löschung wie
+  in der Webapp, siehe Abschnitt "Mitarbeiter-Stammdaten: Suche,
+  Dubletten-Erkennung, weiches Löschen"), sowie je Mitarbeiter:in den
+  Verlauf anzeigen (Button "Verlauf anzeigen": wie oft/wann krank,
+  Stammdaten-Änderungen inkl. Löschen/Wiederherstellen).
 - **Stammdaten-Import**: durchsucht einen Ordner mit echten Tagesdienstplan-
   Excel-Dateien (z. B. `04_Tagesdienstpläne`) rekursiv nach Vor-/Nachnamen
   (Unterordner `03_Krankmeldungen` wird ausgeschlossen) und legt daraus
@@ -419,13 +424,35 @@ jede:r Mitarbeiter:in sein/ihr Passwort danach selbst zurücksetzen
 Ohne hinterlegte Sicherheitsfrage bleibt nur der Admin/Schichtleitungs-
 Reset über die Benutzerverwaltung.
 
-### Mitarbeiter-Stammdaten: Suche und Dubletten-Erkennung
+### Mitarbeiter-Stammdaten: Suche, Dubletten-Erkennung, weiches Löschen
 
 - Suchfeld über der Stammdaten-Tabelle (`GET /api/mitarbeiter?suche=...`).
-- Neue Karte "Mögliche Dubletten" (ab Rolle Disponent, Button "Prüfen"):
+- Karte "Mögliche Dubletten" (ab Rolle Disponent, Button "Prüfen"):
   gruppiert Stammdatensätze mit exakt gleichem oder sehr ähnlichem Namen
   (Tippfehler-Ähnlichkeitsvergleich, siehe `backend/app/mitarbeiter_duplikate.py`)
-  zur manuellen Prüfung - direkt mit "Bearbeiten"/"Löschen" korrigierbar.
+  zur manuellen Prüfung - direkt mit "Bearbeiten"/"Löschen" korrigierbar;
+  die Liste aktualisiert sich sofort nach dem Löschen/Wiederherstellen.
+- **Weiches Löschen**: "Löschen" entfernt einen Stammdatensatz nicht
+  endgültig, sondern markiert ihn als entfernt (`geloescht`,
+  `geloescht_am`, `geloescht_durch`, siehe `models.py:Mitarbeiter`) -
+  analog zum bestehenden Dienstplan-Verhalten. Die Checkbox "Entfernte
+  anzeigen" blendet weich gelöschte Einträge ein, dort direkt mit Pill
+  "Entfernt" (Tooltip: wer/wann) und Button "Wiederherstellen"
+  (`POST /api/mitarbeiter/{id}/wiederherstellen`). Wer/wann angelegt,
+  geändert, gelöscht oder wiederhergestellt hat, bleibt zusätzlich im
+  Verlauf (`/api/mitarbeiter/{id}/historie`) und im Änderungsprotokoll
+  nachvollziehbar. Auch im **Verwaltungstool** (Desktop) verfügbar (Reiter
+  "Mitarbeiter-Stammdaten": Checkbox "Entfernte anzeigen", Buttons
+  "Löschen (weich)"/"Wiederherstellen").
+- **Strikte Namensvalidierung**: Bei einer Krankmeldung ("Meldender") und
+  beim manuellen Hinzufügen zum Dienstplan ist nur noch die Eingabe eines
+  Namens möglich, der exakt einem aktiven Mitarbeiter-Stammdatensatz
+  entspricht (clientseitig per Vorschlagsliste geprüft, serverseitig über
+  `backend/app/mitarbeiter_matching.ist_mitarbeiter_name_bekannt`
+  zusätzlich erzwungen) - verhindert neue, nicht gepflegte Namen und hilft,
+  die Stammdaten auf Dauer dubletten- und fehlerfrei zu halten. Der
+  Excel-Import des Dienstplans bleibt davon bewusst unberührt (dort
+  weiterhin tolerant, siehe unsichere Zuordnungen).
 
 ### Dienstplan: Mitarbeiter manuell hinzufügen/entfernen
 
@@ -436,6 +463,101 @@ der Datenbank, Badge "Entfernt", über "Wiederherstellen" rückgängig
 machbar). Die Checkbox "Entferne Einträge: Entfernte anzeigen" blendet
 weich gelöschte Einträge ein/aus. Manuell hinzugefügte Einträge tragen
 zusätzlich das Badge "Hinzugefügt". Beides ab Rolle Disponent bedienbar.
+Alle drei Aktionen (Hinzufügen/Entfernen/Wiederherstellen) sind direkt in
+der Tabelle nachvollziehbar: die Badges "Hinzugefügt"/"Entfernt"/
+"Wiederhergestellt" zeigen per Tooltip, **wer** es **wann** gemacht hat
+(`hinzugefuegt_durch`, `geloescht_am`/`geloescht_durch`,
+`wiederhergestellt_am`/`wiederhergestellt_durch`, siehe
+`models.py:DienstplanEintrag`) - zusätzlich zum ausführlichen Tab
+"Änderungen" (siehe unten).
+
+### Dienstplan: Tab "Änderungen" (alle Änderungen nachvollziehen)
+
+Neben "+ Mitarbeiter hinzufügen" öffnet der Button **"Änderungen"** (für
+ALLE angemeldeten Rollen) eine Übersicht aller Dienstplan-Änderungen
+(Hinzugefügt/Bearbeitet/Entfernt/Wiederhergestellt) - standardmäßig für
+den gerade angezeigten Tag, über "Von"/"Bis" aber auch für einen beliebigen
+Zeitraum. Je Zeile: betroffener Tag, Zeitpunkt der Änderung, Aktion,
+Mitarbeiter:in, durchführender Account und die konkreten Feldänderungen
+(`GET /api/dienstplan/audit?von=...&bis=...`, siehe
+`models.py:DienstplanAudit`) - inkl. Excel-Export
+(`/api/dienstplan/audit/export`).
+
+Zusätzlich wird bei JEDER Änderung automatisch eine Excel-Datei unter
+`Backups\Tagesdienstpläne\Aenderungen\<Jahr>\<MM>_<Monat>\<Tag>.xlsx`
+angelegt bzw. überschrieben (analog zum Tagesdienstplan-Schnappschuss,
+siehe oben) - sie wird dabei jedes Mal komplett aus der vollständigen,
+in der Datenbank gespeicherten Änderungshistorie dieses Tages neu
+aufgebaut, sodass trotz des Überschreibens nichts verloren geht (siehe
+`routers/dienstplan.py:_sichere_aenderungen_snapshot`).
+
+### Unbekannte Dienstkürzel
+
+Dienst-Kürzel, die das System nicht kennt (siehe
+`dienstplan_parser.BEKANNTE_KUERZEL`, z. B. durch Tippfehler oder neue,
+noch nicht hinterlegte Kürzel), werden direkt in der Dienstplan-Zeile mit
+einem Warn-Badge "Unbekanntes Kürzel" markiert (`GET
+/api/dienstplan/bekannte-kuerzel`) - zusätzlich zur bisherigen
+Sammelmeldung beim Excel-Import.
+
+### Dienstplan-Import: Namen, die nicht/unsicher zu den Stammdaten passen
+
+Jeder Name aus einem Excel-Import wird gegen die Mitarbeiter-Stammdaten
+abgeglichen (siehe `mitarbeiter_matching.ordne_mitarbeiter_zu`). Der
+Import wird dadurch NIE blockiert - auch unklare Treffer werden als
+Dienstplan-Eintrag angelegt -, aber unter "Tagesdienstplan importieren"
+erscheinen danach zwei handlungsfähige Hinweis-Listen:
+
+- **"Nicht den Stammdaten zugeordnet"**: Der Name kam in den
+  Stammdaten gar nicht vor. Über den Button "Jetzt anlegen" springt man
+  direkt zu "Mitarbeiter:in anlegen" (Personal-Tab), mit Vor-/Nachname
+  aus der Excel-Zelle vorbelegt - nach Prüfen und Speichern ist die
+  Person für künftige Importe/Eingaben bekannt (dieser eine Dienstplan-
+  Eintrag selbst wird dabei nicht automatisch nachträglich verknüpft).
+- **"Unsichere Zuordnung - bitte prüfen"**: Der Name wurde nur über
+  Tippfehler-/Dreher-Erkennung einem Stammdatensatz zugeordnet (diese
+  Zuordnung ist zu diesem Zeitpunkt bereits aktiv). Über "Bestätigen"
+  (`POST /api/dienstplan/{id}/zuordnung/bestaetigen`) bleibt sie
+  bestehen - wird aber jetzt, anders als zuvor, mit Wer/Wann im
+  Änderungsprotokoll festgehalten. Über "Ablehnen" (`POST
+  /api/dienstplan/{id}/zuordnung/ablehnen`) wird die Zuordnung wieder
+  gelöst (`mitarbeiter_id` → `None`) und man springt direkt zu
+  "Mitarbeiter:in anlegen", vorbelegt mit dem ursprünglichen Namen aus
+  der Excel-Zelle.
+
+Beide Aktionen erzeugen - wie alle anderen Dienstplan-Änderungen - einen
+Eintrag im Tab "Änderungen" und im Tagesprotokoll (siehe unten).
+
+### Verspätungen erfassen ("Ver."-Button) und auswerten
+
+Neben "Bearbeiten" gibt es je Dienstplan-Eintrag (ab Rolle Disponent)
+einen Button "Ver.", der ein Popup zum Erfassen einer Verspätung öffnet:
+Schnellwahl in 5-Minuten-Schritten bis 60 Minuten sowie eine manuelle
+Eingabe (auch darüber hinaus), mit Live-Vorschau der tatsächlichen
+Beginnzeit. Die Verspätung wird zusätzlich zur geplanten Beginnzeit
+gespeichert (`verspaetung_minuten`, siehe `models.py:DienstplanEintrag`) -
+die geplante Zeit selbst bleibt unverändert. Zusätzlich wird erfasst,
+welcher Account die Verspätung wann eingetragen hat
+(`verspaetung_erfasst_von`/`verspaetung_erfasst_am`). In der
+Dienstplan-Tabelle erscheint sie als Badge direkt neben "Beginn" (Tooltip:
+Minuten + erfassender Account + Zeitpunkt).
+
+Der neue Tab **"Dienstplan Auswertung"** (Hauptnavigation, ab Rolle
+Disponent) wertet für einen frei wählbaren Zeitraum sowohl **Verspätungen**
+als auch **Krankmeldungen** aus (`GET /api/dienstplan/auswertung?von=...&bis=...`),
+jeweils übersichtlich in zwei Tabellen:
+- Zusammenfassung je Mitarbeiter:in (Anzahl + Summe Minuten bzw. Anzahl +
+  Kranktage gesamt)
+- Einzelne Vorfälle mit allen Details - bei Verspätungen: Tag, Dienst,
+  geplanter Beginn, Minuten, **wer sie wann erfasst hat**; bei
+  Krankmeldungen: Zeitraum, Kranktage, angenommen von, gemeldet am.
+
+Excel-Export (`/api/dienstplan/auswertung/export`) liefert eine
+Arbeitsmappe mit zwei Tabellenblättern ("Verspätungen", "Krankmeldungen")
+mit denselben Detaildaten. Verspätungen gibt es nur als manuell erfasste
+Werte (siehe oben) - es gibt im System keine automatische "Ist-Zeit"-
+Quelle (z. B. Stempeluhr), gegen die eine Abweichung automatisch berechnet
+werden könnte.
 
 ### Klare Tag-/Nacht-Trennung im Dienstplan
 
@@ -474,6 +596,22 @@ Daten-Zusammenführung durch. Bei einer Warnung: Server beenden, mit
 einem/einer Administrator:in die beiden Datenbankdateien vergleichen
 (z. B. mit dem Verwaltungstool oder einem SQLite-Browser) und die
 Konfliktkopie erst danach manuell entfernen.
+
+### Branding "NeSk - Illuminate" und Darkmode
+
+Die Seitenleiste zeigt statt "DRK FKB" das NeSk-Logo
+(`frontend\assets\nesk-logo.png`, Quelle: `Nesk\Nesk3\Daten\Logo\nesk3.ico`)
+zusammen mit dem Schriftzug "NeSk - Illuminate". Das Browser-Tab-Icon
+(Favicon) nutzt ebenfalls dieses Logo (`frontend\assets\favicon.ico`).
+Oben rechts (Topbar bzw. auf dem Anmeldebildschirm) gibt es einen
+Mond-/Sonnen-Button zum Umschalten zwischen Hell- und Dunkelmodus; die
+Wahl wird pro Browser in `localStorage` gespeichert und bleibt daher über
+Neuladen/Neuanmeldung hinweg erhalten (für alle Nutzer:innen unabhängig
+von der Rolle). Technisch steuert ein `data-theme`-Attribut auf `<html>`
+einen Satz CSS-Variablen (`--bg`, `--surface`, `--ink`, `--border`,
+`--pill-*`, usw.) in `frontend\index.html`; neue Komponenten sollten diese
+Variablen statt fest codierter Farben verwenden, damit sie automatisch
+dunkelmodustauglich sind.
 
 ## 9. Manuelle Befehle (optional, für Entwickler)
 

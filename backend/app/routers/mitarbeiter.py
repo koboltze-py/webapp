@@ -41,12 +41,15 @@ def _id(row: Any) -> Any:
 @router.get("", response_model=List[MitarbeiterOut])
 def list_mitarbeiter(
     suche: Optional[str] = None,
+    mit_geloeschten: bool = False,
     repo=Depends(get_mitarbeiter_repository),
     role: str = Depends(get_current_role),
 ):
     """`suche` filtert nach Vor- und/oder Nachname (Groß-/Kleinschreibung
-    egal, Teilstring-Treffer), siehe Stammdaten-Suche im Frontend."""
-    rows = repo.list_mitarbeiter()
+    egal, Teilstring-Treffer), siehe Stammdaten-Suche im Frontend.
+    `mit_geloeschten=true` zeigt auch weich gelöschte Stammdatensätze
+    (siehe delete_mitarbeiter/restore_mitarbeiter)."""
+    rows = repo.list_mitarbeiter(mit_geloeschten)
     if suche and suche.strip():
         q = suche.strip().casefold()
         rows = [m for m in rows if q in _name(m).casefold()]
@@ -110,28 +113,58 @@ def update_mitarbeiter(
     return row
 
 
-@router.delete("/{mitarbeiter_id}")
+@router.delete("/{mitarbeiter_id}", response_model=MitarbeiterOut)
 def delete_mitarbeiter(
     mitarbeiter_id: str,
     request: Request,
     repo=Depends(get_mitarbeiter_repository),
     role: str = Depends(require_disponent),
 ):
-    bestehende = {str(_id(m)): m for m in repo.list_mitarbeiter()}
+    """Entfernt einen Stammdatensatz weich (nicht endgültig) - bleibt in der
+    Datenbank erhalten und als 'gelöscht' gekennzeichnet (siehe
+    MitarbeiterOut.geloescht/geloescht_am/geloescht_durch), damit im
+    Frontend nachvollziehbar bleibt, dass/wann/durch wen er entfernt wurde;
+    über /wiederherstellen rückgängig machbar. Dient u. a. dem gefahrlosen
+    Bereinigen von Dubletten (siehe /duplikate)."""
+    bestehende = {str(_id(m)): m for m in repo.list_mitarbeiter(mit_geloeschten=True)}
     name = _name(bestehende[mitarbeiter_id]) if mitarbeiter_id in bestehende else ""
     actor_username = request.session.get("username", role)
-    repo.delete_mitarbeiter(mitarbeiter_id)
+    row = repo.delete_mitarbeiter(mitarbeiter_id, actor_username)
     record_ereignis(
-        mitarbeiter_id=None, mitarbeiter_name=name, ereignis_typ="stammdaten_geloescht",
-        beschreibung="Stammdatensatz gelöscht.", bezug_typ="mitarbeiter", bezug_id=mitarbeiter_id,
+        mitarbeiter_id=_id(row), mitarbeiter_name=name, ereignis_typ="stammdaten_geloescht",
+        beschreibung="Stammdatensatz entfernt (weich gelöscht).", bezug_typ="mitarbeiter", bezug_id=mitarbeiter_id,
         actor_username=actor_username, actor_role=role,
     )
     record_activity(
         request, aktion="DELETE", bereich="Mitarbeiter-Stammdaten",
         entity_typ="mitarbeiter", entity_id=mitarbeiter_id, entity_bezeichnung=name,
-        beschreibung=f"Mitarbeiter:in '{name}' gelöscht.",
+        beschreibung=f"Mitarbeiter:in '{name}' entfernt (weich gelöscht).",
     )
-    return {"ok": True}
+    return row
+
+
+@router.post("/{mitarbeiter_id}/wiederherstellen", response_model=MitarbeiterOut)
+def restore_mitarbeiter(
+    mitarbeiter_id: str,
+    request: Request,
+    repo=Depends(get_mitarbeiter_repository),
+    role: str = Depends(require_disponent),
+):
+    """Macht ein vorheriges delete_mitarbeiter rückgängig."""
+    actor_username = request.session.get("username", role)
+    row = repo.restore_mitarbeiter(mitarbeiter_id)
+    name = _name(row)
+    record_ereignis(
+        mitarbeiter_id=_id(row), mitarbeiter_name=name, ereignis_typ="stammdaten_wiederhergestellt",
+        beschreibung="Stammdatensatz wiederhergestellt.", bezug_typ="mitarbeiter", bezug_id=mitarbeiter_id,
+        actor_username=actor_username, actor_role=role,
+    )
+    record_activity(
+        request, aktion="UPDATE", bereich="Mitarbeiter-Stammdaten",
+        entity_typ="mitarbeiter", entity_id=mitarbeiter_id, entity_bezeichnung=name,
+        beschreibung=f"Mitarbeiter:in '{name}' wiederhergestellt.",
+    )
+    return row
 
 
 def _ereignis_zu_dict(e: Any) -> dict[str, Any]:
@@ -154,6 +187,7 @@ EREIGNIS_LABEL = {
     "stammdaten_geaendert": "Stammdaten geändert",
     "stammdaten_deaktiviert": "Stammdaten deaktiviert",
     "stammdaten_geloescht": "Stammdaten gelöscht",
+    "stammdaten_wiederhergestellt": "Stammdaten wiederhergestellt",
 }
 
 

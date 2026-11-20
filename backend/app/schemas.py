@@ -147,6 +147,13 @@ class MitarbeiterOut(MitarbeiterBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: Union[int, str]
+    # Weich gelöscht (siehe models.py:Mitarbeiter.geloescht und
+    # routers/mitarbeiter.py: delete_mitarbeiter/restore_mitarbeiter) -
+    # bleibt in der Datenbank erhalten und ist standardmäßig in Listen
+    # ausgeblendet (siehe GET /api/mitarbeiter ?mit_geloeschten=true).
+    geloescht: bool = False
+    geloescht_am: Optional[datetime] = None
+    geloescht_durch: str = ""
     created_at: datetime
     updated_at: datetime
 
@@ -186,9 +193,22 @@ class DienstplanEintragOut(BaseModel):
     # wiederhergestellt werden; standardmäßig in Listen ausgeblendet
     # (siehe GET /api/dienstplan ?mit_geloeschten=true).
     geloescht: bool = False
+    geloescht_am: Optional[datetime] = None
+    geloescht_durch: str = ""
+    wiederhergestellt_am: Optional[datetime] = None
+    wiederhergestellt_durch: str = ""
     # True = nicht aus einem Excel-Import, sondern manuell über
     # POST /api/dienstplan hinzugefügt (siehe create_dienstplan_eintrag).
     manuell_hinzugefuegt: bool = False
+    hinzugefuegt_durch: str = ""
+    # Nachträglich erfasste Verspätung in Minuten, siehe
+    # models.py:DienstplanEintrag.verspaetung_minuten ("Ver."-Popup im
+    # Frontend). Ergänzt start_zeit, überschreibt sie nicht.
+    verspaetung_minuten: int = 0
+    # Wer/wann die aktuelle Verspätung zuletzt erfasst hat, siehe
+    # models.py:DienstplanEintrag.verspaetung_erfasst_von/_am.
+    verspaetung_erfasst_von: str = ""
+    verspaetung_erfasst_am: Optional[datetime] = None
     notiz: str = ""
     quelle_datei: str = ""
     created_at: datetime
@@ -226,6 +246,11 @@ class DienstplanEintragUpdate(BaseModel):
     ausgeschlossen: Optional[bool] = None
     start_zeit: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
     end_zeit: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}$")
+    # Verspätung in Minuten, siehe models.py:DienstplanEintrag.verspaetung_minuten
+    # und das "Ver."-Popup im Frontend (Schnellwahl 5-Minuten-Schritte bis
+    # 60 Minuten + manuelle Eingabe). Obergrenze ist nur eine grobe
+    # Plausibilitätsgrenze (12 Stunden), keine fachliche Begrenzung.
+    verspaetung_minuten: Optional[int] = Field(None, ge=0, le=720)
     notiz: Optional[str] = Field(None, max_length=500)
     # Nur relevant, wenn ist_krank von true auf false wechselt: löscht dann
     # zusätzlich die passende(n) laufende(n) Krankmeldung(en) dieser Person
@@ -241,12 +266,74 @@ class DienstplanQuelle(BaseModel):
     anzahl_eintraege: int = 0
 
 
+class DienstplanAuswertungZeile(BaseModel):
+    """Eine Zeile der Verspätungs-Zusammenfassung je Mitarbeiter:in
+    (siehe routers/dienstplan.py: GET /api/dienstplan/auswertung)."""
+
+    mitarbeiter_name: str
+    anzahl_verspaetungen: int
+    summe_verspaetung_minuten: int
+
+
+class VerspaetungsEintrag(BaseModel):
+    """Einzelner erfasster Verspätungs-Vorfall (ein Dienstplan-Eintrag mit
+    verspaetung_minuten > 0) - Detailzeile der Auswertung."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    dienstplan_id: Union[int, str]
+    datum: date
+    mitarbeiter_name: str
+    dienst_kategorie: Optional[str] = None
+    geplanter_beginn: Optional[str] = None
+    verspaetung_minuten: int
+    erfasst_von: str = ""
+    erfasst_am: Optional[datetime] = None
+
+
+class KrankmeldungsEintrag(BaseModel):
+    """Einzelne Krankmeldung, deren Zeitraum sich mit dem Auswertungs-
+    zeitraum überschneidet - Detailzeile der Auswertung."""
+
+    report_id: Union[int, str]
+    mitarbeiter_name: str
+    sick_from: date
+    sick_to: date
+    kranktage: int
+    accepted_by: str = ""
+    reported_at: date
+
+
+class KrankmeldungsZusammenfassung(BaseModel):
+    mitarbeiter_name: str
+    anzahl_krankmeldungen: int
+    kranktage_gesamt: int
+
+
+class DienstplanAuswertungOut(BaseModel):
+    """Komplette Dienstplan-Auswertung für einen Zeitraum (siehe
+    routers/dienstplan.py: GET /api/dienstplan/auswertung) - Verspätungen
+    UND Krankmeldungen, jeweils als Einzel-Vorfälle und als Zusammenfassung
+    je Mitarbeiter:in, für den Tab "Dienstplan Auswertung" im Frontend."""
+
+    von: date
+    bis: date
+    verspaetungen: list[VerspaetungsEintrag]
+    verspaetungen_zusammenfassung: list[DienstplanAuswertungZeile]
+    krankmeldungen: list[KrankmeldungsEintrag]
+    krankmeldungen_zusammenfassung: list[KrankmeldungsZusammenfassung]
+
+
 class DienstplanAuditOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: Union[int, str]
     event_at: datetime
     dienstplan_id: Optional[Union[int, str]] = None
+    # Betroffener Dienstplan-Tag (siehe models.py:DienstplanAudit.datum) -
+    # kann von event_at.date() abweichen (z. B. nachträgliche Korrektur
+    # eines älteren Tages).
+    datum: Optional[date] = None
     mitarbeiter_name: str = ""
     action: str
     actor_role: str
@@ -266,9 +353,33 @@ class KrankOhneMeldung(BaseModel):
 class UnsichereZuordnung(BaseModel):
     """Dienstplan-Name, der beim Import nur unscharf (Tippfehler/Dreher)
     oder gar nicht eindeutig einem Stammdatensatz zugeordnet werden konnte
-    (siehe mitarbeiter_matching.py) - zur manuellen Prüfung."""
+    (siehe mitarbeiter_matching.py) - zur manuellen Prüfung.
+
+    Die automatische Zuordnung wurde dabei bereits auf den Dienstplan-
+    Eintrag (eintrag_id) übernommen (siehe routers/dienstplan.py:
+    import_dienstplan) - über /api/dienstplan/{eintrag_id}/zuordnung/
+    bestaetigen bzw. .../ablehnen kann sie im Frontend bestätigt oder
+    rückgängig gemacht werden (dann mitarbeiter_id=None, wie bei einer
+    'nicht zugeordneten' Person)."""
     mitarbeiter_name: str
+    vorname: str = ""
+    nachname: str = ""
     vorschlag: Optional[str] = None  # Name des unsicher erkannten Treffers, falls vorhanden
+    eintrag_id: Optional[Union[int, str]] = None
+    vorgeschlagene_mitarbeiter_id: Optional[Union[int, str]] = None
+
+
+class NichtZugeordneterMitarbeiter(BaseModel):
+    """Name aus dem Dienstplan-Import, der KEINEM Stammdatensatz zugeordnet
+    werden konnte (siehe mitarbeiter_matching.ordne_mitarbeiter_zu) - der
+    Dienstplan-Eintrag wurde trotzdem angelegt (mitarbeiter_id=None).
+    vorname/nachname stammen direkt aus der Excel-Zelle (siehe
+    dienstplan_parser.py) und dienen als Vorbelegung für das Formular
+    "Mitarbeiter:in anlegen" im Frontend."""
+    mitarbeiter_name: str
+    vorname: str = ""
+    nachname: str = ""
+    eintrag_id: Optional[Union[int, str]] = None
 
 
 class DienstplanImportResult(BaseModel):
@@ -279,7 +390,7 @@ class DienstplanImportResult(BaseModel):
     anzahl_bulmorfahrer: int = 0
     unbekannte_dienste: list[str] = []
     krank_ohne_meldung: list[KrankOhneMeldung] = []
-    nicht_zugeordnete_mitarbeiter: list[str] = []
+    nicht_zugeordnete_mitarbeiter: list[NichtZugeordneterMitarbeiter] = []
     unsichere_zuordnungen: list[UnsichereZuordnung] = []
     error: Optional[str] = None
 

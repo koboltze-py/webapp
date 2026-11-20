@@ -55,6 +55,35 @@ def _mitarbeiter_felder(m: Any) -> tuple[str, str]:
     return (vorname or "").strip(), (nachname or "").strip()
 
 
+def ist_mitarbeiter_name_bekannt(name: str, mitarbeiter_liste: Iterable[Any], *, nur_aktive: bool = True) -> bool:
+    """True, wenn `name` EXAKT (Gross-/Kleinschreibung und Leerzeichen egal,
+    beide Namensformate 'Vorname Nachname'/'Nachname, Vorname' erlaubt)
+    einem (nicht geloeschten) Mitarbeiter-Stammdatensatz entspricht.
+
+    Bewusst OHNE Tippfehler-/Aehnlichkeits-Toleranz (anders als
+    ordne_mitarbeiter_zu): hier soll verhindert werden, dass ueberhaupt ein
+    nicht in den Stammdaten vorhandener Name eingegeben wird (siehe
+    routers/reports.py, routers/dienstplan.py: strikte Namensvalidierung
+    bei Krankmeldung/manuellem Dienstplan-Eintrag), nicht trotz Tippfehlern
+    eine Zuordnung zu erraten.
+
+    `nur_aktive=True` (Standard) laesst nur aktive Mitarbeiter:innen gelten,
+    damit inaktive/ausgeschiedene nicht fuer neue Vorgaenge ausgewaehlt
+    werden koennen."""
+    if not name or not name.strip():
+        return False
+    ziel = _normalisiere(zu_dienstplan_format(name))
+    for m in mitarbeiter_liste:
+        if (m["geloescht"] if isinstance(m, dict) else getattr(m, "geloescht", False)):
+            continue
+        if nur_aktive and not (m["aktiv"] if isinstance(m, dict) else m.aktiv):
+            continue
+        vorname, nachname = _mitarbeiter_felder(m)
+        if _normalisiere(f"{vorname} {nachname}") == ziel:
+            return True
+    return False
+
+
 def ordne_mitarbeiter_zu(name: str, mitarbeiter_liste: Iterable[Any]) -> Optional[MatchErgebnis]:
     """Versucht `name` genau einem Eintrag aus `mitarbeiter_liste` (Mitarbeiter-
     ORM-Objekte oder dicts mit vorname/nachname/id) zuzuordnen.
